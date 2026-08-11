@@ -1,6 +1,5 @@
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
-import { Topbar } from "@/components/Topbar";
+import { PublicHeader } from "@/components/PublicHeader";
+import { PublicFooter } from "@/components/PublicFooter";
 import { ModuleRecordsTable } from "@/components/ModuleRecordsTable";
 import { MetricWidgetChart } from "@/components/MetricWidgetChart";
 import { getPublicIndicators, listPublishedResources } from "@/server/data/repository";
@@ -13,23 +12,19 @@ export default async function PublicPortalPage() {
 
   return (
     <div className="page-shell">
-      <Topbar />
-      <main className="section">
-        <Link className="button" href="/">
-          <ArrowLeft size={18} aria-hidden="true" />
-          Regresar
-        </Link>
-        <section className="panel" style={{ marginTop: "1rem" }}>
-          <p className="eyebrow">Portal publico</p>
-          <h1 style={{ fontSize: "clamp(2rem, 5vw, 3.2rem)" }}>{t("portal.transparency.title")}</h1>
-          <p className="lead">
-            Materiales publicados y datos no sensibles. Los expedientes individuales nunca se exponen en este portal.
-          </p>
-        </section>
+      <a className="skip-link" href="#main">Saltar al contenido</a>
+      <PublicHeader current="/transparencia" />
+      <main id="main" className="landing section-block">
+        <p className="eyebrow" style={{ textAlign: "center" }}>Portal público</p>
+        <h1 className="section-title">{t("portal.transparency.title")}</h1>
+        <p className="section-sub">
+          Materiales publicados y datos no sensibles. Los expedientes individuales nunca se exponen en este portal.
+        </p>
+
         <section className="panel" style={{ marginTop: "1rem" }}>
           <h2>{t("portal.indicators.title")}</h2>
           <p className="muted">
-            Cifras agregadas con umbral de privacidad de {indicators.minimumCellCount}. Los grupos pequenos se reservan para no
+            Cifras agregadas con umbral de privacidad de {indicators.minimumCellCount}. Los grupos pequeños se reservan para no
             reidentificar personas. Actualizado {indicators.generatedAt}.
           </p>
           <div className="widget-grid">
@@ -47,11 +42,13 @@ export default async function PublicPortalPage() {
             ))}
           </div>
         </section>
+
         <section className="panel" style={{ marginTop: "1rem" }}>
           <h2>Recursos publicados</h2>
           <ModuleRecordsTable records={resources} />
         </section>
       </main>
+      <PublicFooter />
     </div>
   );
 }

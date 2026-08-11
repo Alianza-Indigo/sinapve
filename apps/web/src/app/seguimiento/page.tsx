@@ -1,6 +1,5 @@
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
-import { Topbar } from "@/components/Topbar";
+import { PublicHeader } from "@/components/PublicHeader";
+import { PublicFooter } from "@/components/PublicFooter";
 import { getReportStatus } from "@/server/data/repository";
 import { DatabaseNotConfiguredError } from "@/server/db";
 
@@ -27,12 +26,9 @@ export default async function TrackingPage({ searchParams }: { searchParams: Pro
 
   return (
     <div className="page-shell">
-      <Topbar />
-      <main className="section">
-        <Link className="button" href="/">
-          <ArrowLeft size={18} aria-hidden="true" />
-          Regresar
-        </Link>
+      <a className="skip-link" href="#main">Saltar al contenido</a>
+      <PublicHeader />
+      <main id="main" className="section" style={{ maxWidth: 900, margin: "0 auto" }}>
         <section className="panel" style={{ marginTop: "1rem" }}>
           <p className="eyebrow">Seguimiento seguro</p>
           <h1 style={{ fontSize: "clamp(2rem, 5vw, 3.2rem)" }}>Consulta por folio</h1>
@@ -64,6 +60,7 @@ export default async function TrackingPage({ searchParams }: { searchParams: Pro
           </section>
         ) : null}
       </main>
+      <PublicFooter />
     </div>
   );
 }
