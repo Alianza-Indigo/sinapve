@@ -39,7 +39,6 @@ export type Actor = {
   name: string;
   roles: Role[];
   scope: Scope;
-  mfaVerified: boolean;
 };
 
 export type Organization = {

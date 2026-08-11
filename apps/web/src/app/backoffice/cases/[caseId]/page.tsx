@@ -28,7 +28,7 @@ export default async function CasePage({ params }: { params: Promise<{ caseId: s
             <h1 style={{ fontSize: "clamp(2rem, 5vw, 3rem)" }}>Falta identidad institucional</h1>
             <p className="lead">
               Para abrir expedientes el gateway de identidad debe enviar encabezados verificados de usuario, roles,
-              alcance territorial y MFA. No se usa un actor de prueba.
+              alcance territorial y politica de sensibilidad. No se usa un actor de prueba.
             </p>
             <div className="status-row">
               <span className="status-pill critical">

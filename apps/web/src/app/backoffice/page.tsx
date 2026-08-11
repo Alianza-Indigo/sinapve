@@ -124,7 +124,7 @@ export default async function BackofficePage() {
                 <span className="status-pill safe"><BrainCircuit size={16} aria-hidden="true" /> Fallback humano</span>
                 <span className="status-pill"><Activity size={16} aria-hidden="true" /> Auditoria activa</span>
                 <span className="status-pill"><Map size={16} aria-hidden="true" /> Alcance escolar</span>
-                <span className="status-pill"><ShieldCheck size={16} aria-hidden="true" /> MFA verificado</span>
+                <span className="status-pill"><ShieldCheck size={16} aria-hidden="true" /> Alcance verificado</span>
               </div>
             </section>
           </aside>

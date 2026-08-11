@@ -4,6 +4,7 @@ import { getActorFromHeaders } from "@/server/auth/current-actor";
 import { createReport, listReports } from "@/server/data/repository";
 import { DatabaseNotConfiguredError } from "@/server/db";
 import { canReadReport } from "@/server/domain/access";
+import { FieldEncryptionNotConfiguredError } from "@/server/security/field-crypto";
 
 export const runtime = "nodejs";
 
@@ -13,7 +14,14 @@ const createReportSchema = z.object({
   organizationPublicId: z.string().min(2).max(120),
   schoolName: z.string().min(2).max(160),
   safetyNow: z.enum(["segura", "riesgo", "emergencia"]),
-  description: z.string().min(12).max(4000)
+  description: z.string().min(12).max(4000),
+  captchaToken: z.string().max(1000).optional(),
+  clientRequestId: z.string().min(4).max(160).optional(),
+  affectedPeople: z.array(z.record(z.unknown())).max(20).optional(),
+  contactPreference: z.record(z.unknown()).optional(),
+  consents: z.record(z.unknown()).optional(),
+  categoriesConfirmed: z.array(z.string().min(2).max(120)).max(20).optional(),
+  evidenceIntent: z.record(z.unknown()).optional()
 });
 
 export async function GET(request: Request) {
@@ -41,6 +49,10 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof DatabaseNotConfiguredError) {
       return Response.json({ error: "database_not_configured", message: error.message }, { status: 503 });
+    }
+
+    if (error instanceof FieldEncryptionNotConfiguredError) {
+      return Response.json({ error: "field_encryption_not_configured", message: error.message }, { status: 503 });
     }
 
     if (error instanceof Error && error.message === "ORGANIZATION_NOT_FOUND") {

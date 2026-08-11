@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import type { PlatformModuleId } from "@/server/domain/types";
 
 const creatableModules: PlatformModuleId[] = [
+  "protocols",
+  "analytics",
   "institutions",
   "directory",
   "training",
@@ -42,8 +44,14 @@ export function ModuleCreateForm({ moduleId }: { moduleId: PlatformModuleId }) {
   if (typeof body.scope === "string") {
     body.scope = parseJsonObject(body.scope);
   }
-  for (const key of ["metadata", "territory", "contactPolicy", "channelPlan", "contentPolicy", "annualPlan", "quorumRules", "risks", "evidence", "payload"]) {
+  for (const key of ["metadata", "territory", "contactPolicy", "channelPlan", "contentPolicy", "annualPlan", "quorumRules", "risks", "evidence", "payload", "scenario", "result", "filters", "evaluation"]) {
     if (typeof body[key] === "string") body[key] = parseJsonObject(body[key]);
+  }
+  for (const key of ["widgets", "dataCategories", "anomalyFlags"]) {
+    if (typeof body[key] === "string") body[key] = parseJsonArray(body[key]);
+  }
+  for (const key of ["score", "retentionDays"]) {
+    if (typeof body[key] === "string") body[key] = Number(body[key]);
   }
 
     const response = await fetch(`/api/v1/modules/${moduleId}`, {
@@ -93,8 +101,44 @@ function parseJsonObject(value: string) {
   }
 }
 
+function parseJsonArray(value: string) {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 function fieldConfig(moduleId: PlatformModuleId) {
   const base = [{ name: "title", label: "Titulo", kind: "text", placeholder: "Nombre del registro" }];
+  if (moduleId === "protocols") {
+    return [
+      { name: "recordType", label: "Tipo", kind: "text", placeholder: "approval, simulation o migration" },
+      { name: "protocolCode", label: "Protocolo", kind: "text", placeholder: "school_protection_v1" },
+      { name: "approvalType", label: "Aprobacion", kind: "text", placeholder: "tecnica, legal, accesibilidad" },
+      { name: "resourceId", label: "Caso", kind: "text", placeholder: "Solo migration" },
+      { name: "toProtocolCode", label: "Nuevo protocolo", kind: "text", placeholder: "Solo migration" },
+      { name: "justification", label: "Justificacion", kind: "textarea", placeholder: "Motivo de migracion" },
+      { name: "scenario", label: "Escenario JSON", kind: "textarea", placeholder: "{\"riesgo\":\"grave\"}" },
+      { name: "result", label: "Resultado JSON", kind: "textarea", placeholder: "{\"sla\":\"ok\"}" }
+    ];
+  }
+  if (moduleId === "analytics") {
+    return [
+      { name: "recordType", label: "Tipo", kind: "text", placeholder: "dashboard, metric_export, ai_model o ai_decision" },
+      ...base,
+      { name: "audience", label: "Audiencia", kind: "text", placeholder: "federal, estatal, auditoria" },
+      { name: "widgets", label: "Widgets JSON", kind: "textarea", placeholder: "[{\"metricCodes\":[\"sla\"]}]" },
+      { name: "metricCode", label: "Metrica", kind: "text", placeholder: "SLA_PRIMERA_RESPUESTA" },
+      { name: "exportType", label: "Exportacion", kind: "text", placeholder: "csv, pdf, dashboard" },
+      { name: "purpose", label: "Proposito", kind: "text", placeholder: "Evaluacion autorizada" },
+      { name: "provider", label: "Proveedor IA", kind: "text", placeholder: "gateway, openai..." },
+      { name: "model", label: "Modelo IA", kind: "text", placeholder: "Modelo registrado" },
+      { name: "owner", label: "Responsable", kind: "text", placeholder: "Unidad responsable" },
+      { name: "evaluation", label: "Evaluacion JSON", kind: "textarea", placeholder: "{\"precision\":0.9}" }
+    ];
+  }
   if (moduleId === "training") {
     return [
       ...base,
@@ -157,9 +201,18 @@ function fieldConfig(moduleId: PlatformModuleId) {
   }
   if (moduleId === "privacy") {
     return [
+      { name: "recordType", label: "Tipo", kind: "text", placeholder: "request, processing o retention" },
       { name: "requestType", label: "Tipo de solicitud", kind: "text", placeholder: "acceso, rectificacion, cancelacion, oposicion" },
       { name: "requesterContact", label: "Contacto del titular", kind: "text", placeholder: "Medio seguro de contacto" },
-      { name: "scope", label: "Alcance JSON", kind: "textarea", placeholder: "{\"folio\":\"...\"}" }
+      { name: "scope", label: "Alcance JSON", kind: "textarea", placeholder: "{\"folio\":\"...\"}" },
+      { name: "purpose", label: "Finalidad", kind: "text", placeholder: "Atencion de reportes" },
+      { name: "audience", label: "Audiencia", kind: "text", placeholder: "APVE, privacidad, auditoria" },
+      { name: "dataCategories", label: "Categorias JSON", kind: "textarea", placeholder: "[\"reportes\",\"evidencia\"]" },
+      { name: "legalBasis", label: "Base legal", kind: "text", placeholder: "Interes superior / obligacion legal" },
+      { name: "retentionRule", label: "Regla de retencion", kind: "text", placeholder: "casos_sensibles_v1" },
+      { name: "category", label: "Categoria", kind: "text", placeholder: "expediente, evidencia, auditoria" },
+      { name: "jurisdiction", label: "Jurisdiccion", kind: "text", placeholder: "MX" },
+      { name: "retentionDays", label: "Dias de retencion", kind: "number", placeholder: "1825" }
     ];
   }
   if (moduleId === "adaptations") {

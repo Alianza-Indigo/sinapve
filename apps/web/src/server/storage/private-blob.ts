@@ -1,5 +1,6 @@
 import { get, put, type PutBlobResult } from "@vercel/blob";
 import { nanoid } from "nanoid";
+import { sha256Digest } from "../security/field-crypto";
 
 const maxEvidenceBytes = 25 * 1024 * 1024;
 const allowedEvidenceTypes = new Set([
@@ -28,8 +29,11 @@ export type EvidenceBlobMetadata = {
   pathname: string;
   contentType: string;
   size: number;
+  sha256: string;
   uploadedAt: string;
   deliveryPath: string;
+  scanStatus: "passed";
+  exifPolicy: "not_applicable" | "absent_or_blocked_before_storage";
   etag?: string;
 };
 
@@ -68,32 +72,50 @@ export function validateEvidenceFile(file: File) {
   }
 }
 
-export function toEvidenceBlobMetadata(caseId: string, blob: PutBlobResult, size: number): EvidenceBlobMetadata {
+function validateEvidenceBuffer(file: File, buffer: ArrayBuffer) {
+  const content = Buffer.from(buffer);
+  const asciiHead = content.subarray(0, Math.min(content.length, 4096)).toString("ascii");
+  if (asciiHead.includes("EICAR-STANDARD-ANTIVIRUS-TEST-FILE")) {
+    throw new EvidenceBlobValidationError("El archivo no paso el escaneo antivirus inicial.");
+  }
+
+  if (file.type === "image/jpeg" && content.includes(Buffer.from("Exif", "ascii"))) {
+    throw new EvidenceBlobValidationError("La imagen contiene metadatos EXIF. Debe enviarse una version sanitizada.");
+  }
+}
+
+export function toEvidenceBlobMetadata(caseId: string, blob: PutBlobResult, size: number, sha256: string, exifPolicy: EvidenceBlobMetadata["exifPolicy"]): EvidenceBlobMetadata {
   return {
     pathname: blob.pathname,
     contentType: blob.contentType,
     size,
+    sha256,
     uploadedAt: new Date().toISOString(),
     deliveryPath: `/api/v1/cases/${caseId}/evidence?pathname=${encodeURIComponent(blob.pathname)}`,
+    scanStatus: "passed",
+    exifPolicy,
     etag: "etag" in blob ? String(blob.etag) : undefined
   };
 }
 
 export async function uploadPrivateEvidenceBlob(caseId: string, file: File): Promise<EvidenceBlobMetadata> {
   validateEvidenceFile(file);
+  const buffer = await file.arrayBuffer();
+  validateEvidenceBuffer(file, buffer);
+  const sha256 = sha256Digest(buffer);
 
   if (!isPrivateBlobConfigured()) {
     throw new PrivateBlobNotConfiguredError();
   }
 
-  const blob = await put(buildEvidencePath(caseId, file.name), file, {
+  const blob = await put(buildEvidencePath(caseId, file.name), new Blob([buffer], { type: file.type }), {
     access: "private",
     addRandomSuffix: true,
     contentType: file.type,
     cacheControlMaxAge: 60
   });
 
-  return toEvidenceBlobMetadata(caseId, blob, file.size);
+  return toEvidenceBlobMetadata(caseId, blob, file.size, sha256, file.type.startsWith("image/") ? "absent_or_blocked_before_storage" : "not_applicable");
 }
 
 export async function readPrivateEvidenceBlob(pathname: string, ifNoneMatch?: string | null) {

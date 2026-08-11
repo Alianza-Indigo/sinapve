@@ -36,6 +36,13 @@
       "when": 1786419359408,
       "tag": "0004_striped_korath",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786420844028,
+      "tag": "0005_living_thunderbolts",
+      "breakpoints": true
     }
   ]
 }

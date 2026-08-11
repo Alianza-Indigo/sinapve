@@ -39,7 +39,6 @@ export function getActorFromHeaders(headers: Headers): Actor | null {
       municipalityCode: headers.get("x-sinapve-municipality-code") ?? undefined,
       schoolId: headers.get("x-sinapve-school-id") ?? undefined,
       assignedCaseIds: headers.get("x-sinapve-assigned-cases")?.split(",").map((item) => item.trim())
-    },
-    mfaVerified: headers.get("x-sinapve-mfa") === "true"
+    }
   };
 }

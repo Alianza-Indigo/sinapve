@@ -1,8 +1,11 @@
 import { z } from "zod";
 import { getActorFromHeaders } from "@/server/auth/current-actor";
 import {
+  createAiGovernanceRecord,
+  createAnalyticsGovernanceRecord,
   createCommunicationCampaign,
   createCommunityInitiative,
+  createCommunityProposal,
   createContextualAdaptation,
   createEmirDispatch,
   createGovernanceRecord,
@@ -10,13 +13,17 @@ import {
   createIntegrationEvent,
   createNotificationTemplate,
   createPrivacyRequest,
+  createPrivacyGovernanceRecord,
+  createProtocolGovernanceRecord,
   createServiceDirectoryEntry,
+  createTrainingOperationsRecord,
   createTrainingProgram,
   listModuleRecords
 } from "@/server/data/repository";
 import { DatabaseNotConfiguredError } from "@/server/db";
 import { canReadModule } from "@/server/domain/access";
 import type { PlatformModuleId } from "@/server/domain/types";
+import { FieldEncryptionNotConfiguredError } from "@/server/security/field-crypto";
 
 const validModuleIds = [
   "reports",
@@ -105,6 +112,40 @@ const moduleRecordSchema = z.object({
   quorumRules: z.record(z.unknown()).optional(),
   risks: z.record(z.unknown()).optional(),
   evidence: z.record(z.unknown()).optional(),
+  recordType: z.string().min(2).max(80).optional(),
+  protocolCode: z.string().min(2).max(120).optional(),
+  fromProtocolCode: z.string().min(2).max(120).optional(),
+  toProtocolCode: z.string().min(2).max(120).optional(),
+  approvalType: z.string().min(2).max(120).optional(),
+  scenario: z.record(z.unknown()).optional(),
+  result: z.record(z.unknown()).optional(),
+  programPublicId: z.string().min(2).max(120).optional(),
+  modality: z.string().min(2).max(120).optional(),
+  enrollmentId: z.string().uuid().optional(),
+  assessmentType: z.string().min(2).max(120).optional(),
+  score: z.number().int().min(0).max(100).optional(),
+  anomalyFlags: z.array(z.string().min(2).max(120)).optional(),
+  body: z.string().min(2).max(8000).optional(),
+  widgets: z.array(z.record(z.unknown())).optional(),
+  filters: z.record(z.unknown()).optional(),
+  metricCode: z.string().min(2).max(120).optional(),
+  exportType: z.string().min(2).max(120).optional(),
+  purpose: z.string().min(2).max(240).optional(),
+  provider: z.string().min(2).max(120).optional(),
+  model: z.string().min(2).max(160).optional(),
+  owner: z.string().min(2).max(160).optional(),
+  evaluation: z.record(z.unknown()).optional(),
+  modelPublicId: z.string().min(2).max(120).optional(),
+  prompt: z.string().min(1).max(8000).optional(),
+  response: z.string().min(1).max(8000).optional(),
+  humanDecision: z.string().max(500).optional(),
+  dataCategories: z.array(z.string().min(2).max(120)).optional(),
+  legalBasis: z.string().min(2).max(240).optional(),
+  retentionRule: z.string().min(2).max(240).optional(),
+  category: z.string().min(2).max(120).optional(),
+  jurisdiction: z.string().min(2).max(120).optional(),
+  retentionDays: z.number().int().positive().optional(),
+  legalHold: z.boolean().optional(),
   startsAt: z.string().datetime().optional(),
   endsAt: z.string().datetime().optional()
 });
@@ -132,6 +173,34 @@ export async function POST(request: Request, { params }: { params: Promise<{ mod
 
   try {
     if (moduleId === "training") {
+      if (parsed.data.recordType === "cohort") {
+        if (!parsed.data.programPublicId) return Response.json({ error: "missing_program" }, { status: 400 });
+        if (!parsed.data.modality) return Response.json({ error: "missing_modality" }, { status: 400 });
+        const data = await createTrainingOperationsRecord({
+          recordType: "cohort",
+          programPublicId: parsed.data.programPublicId,
+          modality: parsed.data.modality,
+          startsAt: parsed.data.startsAt,
+          endsAt: parsed.data.endsAt,
+          accessibilityEvidence: parsed.data.evidence,
+          actor
+        });
+        return Response.json({ data }, { status: 201 });
+      }
+      if (parsed.data.recordType === "assessment") {
+        if (!parsed.data.enrollmentId) return Response.json({ error: "missing_enrollment" }, { status: 400 });
+        if (!parsed.data.assessmentType) return Response.json({ error: "missing_assessment_type" }, { status: 400 });
+        const data = await createTrainingOperationsRecord({
+          recordType: "assessment",
+          enrollmentId: parsed.data.enrollmentId,
+          assessmentType: parsed.data.assessmentType,
+          score: parsed.data.score,
+          status: parsed.data.status,
+          anomalyFlags: parsed.data.anomalyFlags,
+          actor
+        });
+        return Response.json({ data }, { status: 201 });
+      }
       if (!parsed.data.title) return Response.json({ error: "missing_title" }, { status: 400 });
       if (!parsed.data.audienceRole) return Response.json({ error: "missing_audience_role" }, { status: 400 });
       const data = await createTrainingProgram({
@@ -145,6 +214,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ mod
     }
 
     if (moduleId === "community") {
+      if (parsed.data.recordType === "proposal") {
+        if (!parsed.data.title) return Response.json({ error: "missing_title" }, { status: 400 });
+        if (!parsed.data.body) return Response.json({ error: "missing_body" }, { status: 400 });
+        const data = await createCommunityProposal({
+          title: parsed.data.title,
+          body: parsed.data.body,
+          organizationPublicId: parsed.data.organizationPublicId,
+          actor
+        });
+        return Response.json({ data }, { status: 201 });
+      }
       if (!parsed.data.title) return Response.json({ error: "missing_title" }, { status: 400 });
       if (!parsed.data.initiativeType) return Response.json({ error: "missing_initiative_type" }, { status: 400 });
       const data = await createCommunityInitiative({
@@ -160,6 +240,35 @@ export async function POST(request: Request, { params }: { params: Promise<{ mod
     }
 
     if (moduleId === "privacy") {
+      if (parsed.data.recordType === "processing") {
+        if (!parsed.data.purpose || !parsed.data.audience || !parsed.data.legalBasis || !parsed.data.retentionRule) {
+          return Response.json({ error: "missing_processing_fields" }, { status: 400 });
+        }
+        const data = await createPrivacyGovernanceRecord({
+          recordType: "processing",
+          purpose: parsed.data.purpose,
+          audience: parsed.data.audience,
+          dataCategories: parsed.data.dataCategories,
+          legalBasis: parsed.data.legalBasis,
+          retentionRule: parsed.data.retentionRule,
+          actor
+        });
+        return Response.json({ data }, { status: 201 });
+      }
+      if (parsed.data.recordType === "retention") {
+        if (!parsed.data.category || !parsed.data.jurisdiction || !parsed.data.retentionDays) {
+          return Response.json({ error: "missing_retention_fields" }, { status: 400 });
+        }
+        const data = await createPrivacyGovernanceRecord({
+          recordType: "retention",
+          category: parsed.data.category,
+          jurisdiction: parsed.data.jurisdiction,
+          retentionDays: parsed.data.retentionDays,
+          legalHold: parsed.data.legalHold,
+          actor
+        });
+        return Response.json({ data }, { status: 201 });
+      }
       if (!parsed.data.requestType) return Response.json({ error: "missing_request_type" }, { status: 400 });
       if (!parsed.data.requesterContact) return Response.json({ error: "missing_requester_contact" }, { status: 400 });
       const data = await createPrivacyRequest({
@@ -229,6 +338,100 @@ export async function POST(request: Request, { params }: { params: Promise<{ mod
       return Response.json({ data }, { status: 201 });
     }
 
+    if (moduleId === "protocols") {
+      if (parsed.data.recordType === "approval") {
+        if (!parsed.data.protocolCode || !parsed.data.approvalType) return Response.json({ error: "missing_protocol_approval_fields" }, { status: 400 });
+        const data = await createProtocolGovernanceRecord({
+          recordType: "approval",
+          protocolCode: parsed.data.protocolCode,
+          approvalType: parsed.data.approvalType,
+          status: parsed.data.status,
+          actor
+        });
+        return Response.json({ data }, { status: 201 });
+      }
+      if (parsed.data.recordType === "simulation") {
+        if (!parsed.data.protocolCode) return Response.json({ error: "missing_protocol_code" }, { status: 400 });
+        const data = await createProtocolGovernanceRecord({
+          recordType: "simulation",
+          protocolCode: parsed.data.protocolCode,
+          scenario: parsed.data.scenario,
+          result: parsed.data.result,
+          actor
+        });
+        return Response.json({ data }, { status: 201 });
+      }
+      if (parsed.data.recordType === "migration") {
+        if (!parsed.data.resourceId || !parsed.data.toProtocolCode || !parsed.data.justification) {
+          return Response.json({ error: "missing_protocol_migration_fields" }, { status: 400 });
+        }
+        const data = await createProtocolGovernanceRecord({
+          recordType: "migration",
+          caseId: parsed.data.resourceId,
+          fromProtocolCode: parsed.data.fromProtocolCode,
+          toProtocolCode: parsed.data.toProtocolCode,
+          reason: parsed.data.justification,
+          actor
+        });
+        return Response.json({ data }, { status: 201 });
+      }
+    }
+
+    if (moduleId === "analytics") {
+      if (parsed.data.recordType === "dashboard") {
+        if (!parsed.data.title || !parsed.data.audience) return Response.json({ error: "missing_dashboard_fields" }, { status: 400 });
+        const data = await createAnalyticsGovernanceRecord({
+          recordType: "dashboard",
+          title: parsed.data.title,
+          audience: parsed.data.audience,
+          widgets: parsed.data.widgets,
+          filters: parsed.data.filters,
+          actor
+        });
+        return Response.json({ data }, { status: 201 });
+      }
+      if (parsed.data.recordType === "metric_export") {
+        if (!parsed.data.metricCode || !parsed.data.exportType || !parsed.data.purpose) return Response.json({ error: "missing_metric_export_fields" }, { status: 400 });
+        const data = await createAnalyticsGovernanceRecord({
+          recordType: "metric_export",
+          metricCode: parsed.data.metricCode,
+          exportType: parsed.data.exportType,
+          filters: parsed.data.filters,
+          purpose: parsed.data.purpose,
+          actor
+        });
+        return Response.json({ data }, { status: 201 });
+      }
+      if (parsed.data.recordType === "ai_model") {
+        if (!parsed.data.provider || !parsed.data.model || !parsed.data.purpose || !parsed.data.owner) return Response.json({ error: "missing_ai_model_fields" }, { status: 400 });
+        const data = await createAiGovernanceRecord({
+          recordType: "model",
+          provider: parsed.data.provider,
+          model: parsed.data.model,
+          purpose: parsed.data.purpose,
+          owner: parsed.data.owner,
+          status: parsed.data.status,
+          evaluation: parsed.data.evaluation,
+          actor
+        });
+        return Response.json({ data }, { status: 201 });
+      }
+      if (parsed.data.recordType === "ai_decision") {
+        if (!parsed.data.resourceType || !parsed.data.resourceId || !parsed.data.prompt || !parsed.data.response) return Response.json({ error: "missing_ai_decision_fields" }, { status: 400 });
+        const data = await createAiGovernanceRecord({
+          recordType: "decision",
+          modelPublicId: parsed.data.modelPublicId,
+          resourceType: parsed.data.resourceType,
+          resourceId: parsed.data.resourceId,
+          prompt: parsed.data.prompt,
+          response: parsed.data.response,
+          humanDecision: parsed.data.humanDecision,
+          actor
+        });
+        return Response.json({ data }, { status: 201 });
+      }
+    }
+
     if (moduleId === "adaptations") {
       if (!parsed.data.title) return Response.json({ error: "missing_title" }, { status: 400 });
       if (!parsed.data.population) return Response.json({ error: "missing_population" }, { status: 400 });
@@ -285,6 +488,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ mod
   } catch (error) {
     if (error instanceof DatabaseNotConfiguredError) {
       return Response.json({ error: "database_not_configured", message: error.message }, { status: 503 });
+    }
+    if (error instanceof FieldEncryptionNotConfiguredError) {
+      return Response.json({ error: "field_encryption_not_configured", message: error.message }, { status: 503 });
     }
     if (error instanceof Error && error.message === "ORGANIZATION_NOT_FOUND") {
       return Response.json({ error: "organization_not_found" }, { status: 422 });

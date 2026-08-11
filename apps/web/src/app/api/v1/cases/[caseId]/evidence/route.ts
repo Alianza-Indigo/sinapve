@@ -1,6 +1,6 @@
 import { buildAuditEvent } from "@/server/audit";
 import { getActorFromHeaders } from "@/server/auth/current-actor";
-import { getCase } from "@/server/data/repository";
+import { getCase, recordCaseEvidence } from "@/server/data/repository";
 import { DatabaseNotConfiguredError } from "@/server/db";
 import { canReadCase, hasCapability } from "@/server/domain/access";
 import { EvidenceBlobValidationError, PrivateBlobNotConfiguredError, readPrivateEvidenceBlob, uploadPrivateEvidenceBlob } from "@/server/storage/private-blob";
@@ -41,19 +41,33 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
 
   try {
     const evidence = await uploadPrivateEvidenceBlob(caseFile.id, file);
+    const chainOfCustody = await recordCaseEvidence({
+      caseId: caseFile.id,
+      pathname: evidence.pathname,
+      contentType: evidence.contentType,
+      size: evidence.size,
+      sha256: evidence.sha256,
+      scanStatus: evidence.scanStatus,
+      exifPolicy: evidence.exifPolicy,
+      actor
+    });
     const audit = buildAuditEvent({
       actorId: actor.id,
       action: "evidence.upload_private_blob",
       resourceType: "case",
       resourceId: caseFile.id,
       reason: "case_evidence",
-      metadata: { pathname: evidence.pathname, contentType: evidence.contentType, size: evidence.size }
+      metadata: { pathname: evidence.pathname, contentType: evidence.contentType, size: evidence.size, sha256: evidence.sha256, evidenceId: chainOfCustody.id }
     });
 
-    return Response.json({ evidence, audit }, { status: 201 });
+    return Response.json({ evidence: { ...evidence, chainOfCustodyId: chainOfCustody.id }, audit }, { status: 201 });
   } catch (error) {
     if (error instanceof PrivateBlobNotConfiguredError) {
       return Response.json({ error: "private_blob_not_configured", message: error.message }, { status: 503 });
+    }
+
+    if (error instanceof DatabaseNotConfiguredError) {
+      return Response.json({ error: "database_not_configured", message: error.message }, { status: 503 });
     }
 
     if (error instanceof EvidenceBlobValidationError) {

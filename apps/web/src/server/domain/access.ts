@@ -48,7 +48,7 @@ export function canReadReport(actor: Actor, report: HelpReport) {
 
 export function canReadCase(actor: Actor, caseFile: CaseFile, sensitivity: Sensitivity = "confidencial") {
   if (!hasCapability(actor, "case:read")) return false;
-  if (sensitivity === "altamente_sensible" && !actor.mfaVerified) return false;
+  if (sensitivity === "altamente_sensible" && !actor.roles.includes("PRIVACY_OFFICER") && !actor.roles.includes("AUDITOR")) return false;
   if (actor.roles.includes("FEDERAL") || actor.roles.includes("TECH_ADMIN")) return false;
   if (actor.scope.assignedCaseIds?.includes(caseFile.id)) return true;
   if (actor.scope.organizationId === caseFile.organizationId) return true;
@@ -58,7 +58,7 @@ export function canReadCase(actor: Actor, caseFile: CaseFile, sensitivity: Sensi
 export function explainAccess(actor: Actor, resource: "report" | "case" | "analytics") {
   const roles = actor.roles.join(", ");
   const scope = actor.scope.organizationId ?? actor.scope.stateCode ?? "alcance agregado";
-  return `Permiso efectivo por roles ${roles}, alcance ${scope} y MFA ${actor.mfaVerified ? "verificado" : "pendiente"}.`;
+  return `Permiso efectivo por roles ${roles}, alcance ${scope} y politica de sensibilidad del recurso ${resource}.`;
 }
 
 export function canReadModule(actor: Actor, moduleId: string) {

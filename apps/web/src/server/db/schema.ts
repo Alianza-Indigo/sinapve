@@ -32,7 +32,6 @@ export const users = pgTable("users", {
   externalSubject: text("external_subject").notNull().unique(),
   displayName: text("display_name").notNull(),
   email: text("email"),
-  mfaRequired: boolean("mfa_required").default(true).notNull(),
   disabledAt: timestamp("disabled_at", { withTimezone: true })
 });
 
@@ -48,6 +47,46 @@ export const userAssignments = pgTable("user_assignments", {
   startsAt: timestamp("starts_at", { withTimezone: true }).defaultNow().notNull(),
   endsAt: timestamp("ends_at", { withTimezone: true })
 });
+
+export const userSessions = pgTable(
+  "user_sessions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    sessionDigest: text("session_digest").notNull().unique(),
+    source: text("source").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    userIdx: index("user_sessions_user_idx").on(table.userId),
+    digestIdx: index("user_sessions_digest_idx").on(table.sessionDigest)
+  })
+);
+
+export const breakGlassGrants = pgTable(
+  "break_glass_grants",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    actorUserId: uuid("actor_user_id").references(() => users.id),
+    resourceType: text("resource_type").notNull(),
+    resourceId: text("resource_id").notNull(),
+    reason: text("reason").notNull(),
+    privacyAlertSentAt: timestamp("privacy_alert_sent_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    resourceIdx: index("break_glass_resource_idx").on(table.resourceType, table.resourceId),
+    actorIdx: index("break_glass_actor_idx").on(table.actorUserId)
+  })
+);
 
 export const reports = pgTable(
   "reports",
@@ -92,6 +131,24 @@ export const reportMessages = pgTable(
   })
 );
 
+export const reportIntakeChecks = pgTable(
+  "report_intake_checks",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    reportId: uuid("report_id").references(() => reports.id),
+    publicId: text("public_id").notNull().unique(),
+    checkType: text("check_type").notNull(),
+    status: text("status").notNull(),
+    score: integer("score"),
+    evidence: jsonb("evidence").$type<Record<string, unknown>>().default({}).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    reportIdx: index("report_intake_checks_report_idx").on(table.reportId),
+    typeIdx: index("report_intake_checks_type_idx").on(table.checkType)
+  })
+);
+
 export const cases = pgTable(
   "cases",
   {
@@ -120,6 +177,26 @@ export const cases = pgTable(
   })
 );
 
+export const caseParticipants = pgTable(
+  "case_participants",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    caseId: uuid("case_id")
+      .notNull()
+      .references(() => cases.id),
+    relationship: text("relationship").notNull(),
+    displayLabel: text("display_label").notNull(),
+    detailsCiphertext: text("details_ciphertext"),
+    active: boolean("active").default(true).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    caseIdx: index("case_participants_case_idx").on(table.caseId),
+    relationshipIdx: index("case_participants_relationship_idx").on(table.relationship)
+  })
+);
+
 export const caseEvents = pgTable("case_events", {
   id: uuid("id").defaultRandom().primaryKey(),
   caseId: uuid("case_id")
@@ -131,6 +208,30 @@ export const caseEvents = pgTable("case_events", {
   eventType: text("event_type").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 });
+
+export const caseEvidenceFiles = pgTable(
+  "case_evidence_files",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    caseId: uuid("case_id")
+      .notNull()
+      .references(() => cases.id),
+    pathname: text("pathname").notNull().unique(),
+    contentType: text("content_type").notNull(),
+    size: integer("size").notNull(),
+    sha256: text("sha256").notNull(),
+    scanStatus: text("scan_status").notNull(),
+    exifPolicy: text("exif_policy").notNull(),
+    origin: text("origin").default("case_upload").notNull(),
+    custodianUserId: uuid("custodian_user_id").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    caseIdx: index("case_evidence_files_case_idx").on(table.caseId),
+    shaIdx: index("case_evidence_files_sha_idx").on(table.sha256)
+  })
+);
 
 export const caseAssignments = pgTable(
   "case_assignments",
@@ -150,6 +251,82 @@ export const caseAssignments = pgTable(
   (table) => ({
     caseIdx: index("case_assignments_case_idx").on(table.caseId),
     userIdx: index("case_assignments_user_idx").on(table.userId)
+  })
+);
+
+export const caseFieldVersions = pgTable(
+  "case_field_versions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    caseId: uuid("case_id")
+      .notNull()
+      .references(() => cases.id),
+    fieldName: text("field_name").notNull(),
+    valueCiphertext: text("value_ciphertext").notNull(),
+    reason: text("reason").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    caseIdx: index("case_field_versions_case_idx").on(table.caseId),
+    fieldIdx: index("case_field_versions_field_idx").on(table.fieldName)
+  })
+);
+
+export const protectionMeasures = pgTable(
+  "protection_measures",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    caseId: uuid("case_id")
+      .notNull()
+      .references(() => cases.id),
+    measureType: text("measure_type").notNull(),
+    summaryCiphertext: text("summary_ciphertext").notNull(),
+    status: text("status").default("activa").notNull(),
+    startsAt: timestamp("starts_at", { withTimezone: true }).defaultNow().notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true })
+  },
+  (table) => ({
+    caseIdx: index("protection_measures_case_idx").on(table.caseId),
+    statusIdx: index("protection_measures_status_idx").on(table.status)
+  })
+);
+
+export const consentRecords = pgTable(
+  "consent_records",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    caseId: uuid("case_id").references(() => cases.id),
+    reportId: uuid("report_id").references(() => reports.id),
+    subjectLabel: text("subject_label").notNull(),
+    consentType: text("consent_type").notNull(),
+    legalBasis: text("legal_basis"),
+    status: text("status").default("registrado").notNull(),
+    evidenceCiphertext: text("evidence_ciphertext"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    caseIdx: index("consent_records_case_idx").on(table.caseId),
+    reportIdx: index("consent_records_report_idx").on(table.reportId)
+  })
+);
+
+export const clinicalCompartments = pgTable(
+  "clinical_compartments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    caseId: uuid("case_id")
+      .notNull()
+      .references(() => cases.id),
+    authorizedRole: text("authorized_role").notNull(),
+    summaryCiphertext: text("summary_ciphertext").notNull(),
+    status: text("status").default("restringido").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    caseIdx: index("clinical_compartments_case_idx").on(table.caseId)
   })
 );
 
@@ -348,6 +525,66 @@ export const emirDispatches = pgTable(
   })
 );
 
+export const protocolApprovals = pgTable(
+  "protocol_approvals",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    protocolVersionId: uuid("protocol_version_id")
+      .notNull()
+      .references(() => protocolVersions.id),
+    approverUserId: uuid("approver_user_id").references(() => users.id),
+    approvalType: text("approval_type").notNull(),
+    status: text("status").default("pendiente").notNull(),
+    signedAt: timestamp("signed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    protocolIdx: index("protocol_approvals_protocol_idx").on(table.protocolVersionId),
+    statusIdx: index("protocol_approvals_status_idx").on(table.status)
+  })
+);
+
+export const protocolSimulations = pgTable(
+  "protocol_simulations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    protocolVersionId: uuid("protocol_version_id")
+      .notNull()
+      .references(() => protocolVersions.id),
+    scenario: jsonb("scenario").$type<Record<string, unknown>>().default({}).notNull(),
+    result: jsonb("result").$type<Record<string, unknown>>().default({}).notNull(),
+    status: text("status").default("ejecutada").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    protocolIdx: index("protocol_simulations_protocol_idx").on(table.protocolVersionId)
+  })
+);
+
+export const protocolMigrations = pgTable(
+  "protocol_migrations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    fromProtocolVersionId: uuid("from_protocol_version_id").references(() => protocolVersions.id),
+    toProtocolVersionId: uuid("to_protocol_version_id")
+      .notNull()
+      .references(() => protocolVersions.id),
+    caseId: uuid("case_id")
+      .notNull()
+      .references(() => cases.id),
+    reason: text("reason").notNull(),
+    status: text("status").default("pendiente").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    caseIdx: index("protocol_migrations_case_idx").on(table.caseId),
+    statusIdx: index("protocol_migrations_status_idx").on(table.status)
+  })
+);
+
 export const trainingPrograms = pgTable("training_programs", {
   id: uuid("id").defaultRandom().primaryKey(),
   publicId: text("public_id").notNull().unique(),
@@ -380,6 +617,47 @@ export const trainingEnrollments = pgTable(
   (table) => ({
     userIdx: index("training_enrollments_user_idx").on(table.userId),
     programIdx: index("training_enrollments_program_idx").on(table.programId)
+  })
+);
+
+export const trainingCohorts = pgTable(
+  "training_cohorts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    programId: uuid("program_id")
+      .notNull()
+      .references(() => trainingPrograms.id),
+    facilitatorUserId: uuid("facilitator_user_id").references(() => users.id),
+    modality: text("modality").notNull(),
+    startsAt: timestamp("starts_at", { withTimezone: true }),
+    endsAt: timestamp("ends_at", { withTimezone: true }),
+    status: text("status").default("planeada").notNull(),
+    accessibilityEvidence: jsonb("accessibility_evidence").$type<Record<string, unknown>>().default({}).notNull()
+  },
+  (table) => ({
+    programIdx: index("training_cohorts_program_idx").on(table.programId),
+    statusIdx: index("training_cohorts_status_idx").on(table.status)
+  })
+);
+
+export const trainingAssessments = pgTable(
+  "training_assessments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    enrollmentId: uuid("enrollment_id")
+      .notNull()
+      .references(() => trainingEnrollments.id),
+    assessmentType: text("assessment_type").notNull(),
+    score: integer("score"),
+    status: text("status").default("revision_humana").notNull(),
+    anomalyFlags: jsonb("anomaly_flags").$type<Array<string>>().default([]).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    enrollmentIdx: index("training_assessments_enrollment_idx").on(table.enrollmentId),
+    statusIdx: index("training_assessments_status_idx").on(table.status)
   })
 );
 
@@ -453,6 +731,41 @@ export const contextualAdaptations = pgTable(
   })
 );
 
+export const communityProposals = pgTable(
+  "community_proposals",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    organizationId: uuid("organization_id").references(() => organizations.id),
+    title: text("title").notNull(),
+    bodyCiphertext: text("body_ciphertext").notNull(),
+    status: text("status").default("recibida").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    organizationIdx: index("community_proposals_organization_idx").on(table.organizationId),
+    statusIdx: index("community_proposals_status_idx").on(table.status)
+  })
+);
+
+export const mediationReviews = pgTable(
+  "mediation_reviews",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    caseId: uuid("case_id")
+      .notNull()
+      .references(() => cases.id),
+    eligible: boolean("eligible").notNull(),
+    blockedReasons: jsonb("blocked_reasons").$type<Array<string>>().default([]).notNull(),
+    humanReviewerUserId: uuid("human_reviewer_user_id").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    caseIdx: index("mediation_reviews_case_idx").on(table.caseId)
+  })
+);
+
 export const metricDefinitions = pgTable("metric_definitions", {
   id: uuid("id").defaultRandom().primaryKey(),
   code: text("code").notNull().unique(),
@@ -461,6 +774,44 @@ export const metricDefinitions = pgTable("metric_definitions", {
   formula: text("formula").notNull(),
   privacyPolicy: jsonb("privacy_policy").$type<Record<string, unknown>>().notNull()
 });
+
+export const dashboardLayouts = pgTable(
+  "dashboard_layouts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    ownerUserId: uuid("owner_user_id").references(() => users.id),
+    title: text("title").notNull(),
+    audience: text("audience").notNull(),
+    version: integer("version").default(1).notNull(),
+    widgets: jsonb("widgets").$type<Array<Record<string, unknown>>>().default([]).notNull(),
+    filters: jsonb("filters").$type<Record<string, unknown>>().default({}).notNull(),
+    status: text("status").default("borrador").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    audienceIdx: index("dashboard_layouts_audience_idx").on(table.audience),
+    statusIdx: index("dashboard_layouts_status_idx").on(table.status)
+  })
+);
+
+export const metricExports = pgTable(
+  "metric_exports",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    actorUserId: uuid("actor_user_id").references(() => users.id),
+    metricCode: text("metric_code").notNull(),
+    exportType: text("export_type").notNull(),
+    filters: jsonb("filters").$type<Record<string, unknown>>().default({}).notNull(),
+    purpose: text("purpose").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    metricIdx: index("metric_exports_metric_idx").on(table.metricCode),
+    actorIdx: index("metric_exports_actor_idx").on(table.actorUserId)
+  })
+);
 
 export const generatedReports = pgTable(
   "generated_reports",
@@ -479,6 +830,43 @@ export const generatedReports = pgTable(
   (table) => ({
     statusIdx: index("generated_reports_status_idx").on(table.status),
     typeIdx: index("generated_reports_type_idx").on(table.reportType)
+  })
+);
+
+export const aiModelRegistry = pgTable(
+  "ai_model_registry",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    purpose: text("purpose").notNull(),
+    owner: text("owner").notNull(),
+    status: text("status").default("apagado").notNull(),
+    evaluation: jsonb("evaluation").$type<Record<string, unknown>>().default({}).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    statusIdx: index("ai_model_registry_status_idx").on(table.status),
+    purposeIdx: index("ai_model_registry_purpose_idx").on(table.purpose)
+  })
+);
+
+export const aiDecisionLogs = pgTable(
+  "ai_decision_logs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    modelRegistryId: uuid("model_registry_id").references(() => aiModelRegistry.id),
+    resourceType: text("resource_type").notNull(),
+    resourceId: text("resource_id").notNull(),
+    promptDigest: text("prompt_digest").notNull(),
+    responseDigest: text("response_digest").notNull(),
+    humanDecision: text("human_decision"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    resourceIdx: index("ai_decision_logs_resource_idx").on(table.resourceType, table.resourceId)
   })
 );
 
@@ -625,6 +1013,43 @@ export const privacyRequests = pgTable(
   (table) => ({
     statusIdx: index("privacy_requests_status_idx").on(table.status),
     typeIdx: index("privacy_requests_type_idx").on(table.requestType)
+  })
+);
+
+export const privacyProcessingRecords = pgTable(
+  "privacy_processing_records",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    purpose: text("purpose").notNull(),
+    audience: text("audience").notNull(),
+    dataCategories: jsonb("data_categories").$type<Array<string>>().default([]).notNull(),
+    legalBasis: text("legal_basis").notNull(),
+    retentionRule: text("retention_rule").notNull(),
+    status: text("status").default("vigente").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    purposeIdx: index("privacy_processing_records_purpose_idx").on(table.purpose),
+    statusIdx: index("privacy_processing_records_status_idx").on(table.status)
+  })
+);
+
+export const retentionPolicies = pgTable(
+  "retention_policies",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    category: text("category").notNull(),
+    jurisdiction: text("jurisdiction").notNull(),
+    retentionDays: integer("retention_days").notNull(),
+    legalHold: boolean("legal_hold").default(false).notNull(),
+    status: text("status").default("vigente").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    categoryIdx: index("retention_policies_category_idx").on(table.category),
+    statusIdx: index("retention_policies_status_idx").on(table.status)
   })
 );
 

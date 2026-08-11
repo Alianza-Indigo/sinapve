@@ -10,8 +10,7 @@ const actor: Actor = {
     organizationId: "org_secundaria_norte",
     stateCode: "CHH",
     assignedCaseIds: ["case_001"]
-  },
-  mfaVerified: true
+  }
 };
 
 describe("RBAC + ABAC", () => {
@@ -36,8 +35,7 @@ describe("RBAC + ABAC", () => {
     expect(canReadCase(actor, caseFile)).toBe(true);
   });
 
-  it("denies highly sensitive access when MFA is not verified", () => {
-    const actorWithoutMfa = { ...actor, mfaVerified: false };
+  it("limits highly sensitive access to privacy and audit roles", () => {
     const caseFile: CaseFile = {
       id: "case_001",
       folio: "CASO",
@@ -54,6 +52,7 @@ describe("RBAC + ABAC", () => {
       timeline: []
     };
 
-    expect(canReadCase(actorWithoutMfa, caseFile, "altamente_sensible")).toBe(false);
+    expect(canReadCase(actor, caseFile, "altamente_sensible")).toBe(false);
+    expect(canReadCase({ ...actor, roles: ["PRIVACY_OFFICER"] }, caseFile, "altamente_sensible")).toBe(true);
   });
 });
