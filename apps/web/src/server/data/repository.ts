@@ -1,5 +1,5 @@
 import { nanoid } from "nanoid";
-import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import { DatabaseNotConfiguredError, getDb, isDatabaseConfigured } from "../db";
 import { decryptSensitiveText, encryptSensitiveText, sha256Digest } from "../security/field-crypto";
 import {
@@ -3247,6 +3247,56 @@ export async function createAndDispatchNotification(input: {
     metadata: { actorId: input.actor.id, priority: input.priority, deliveries }
   });
   return { id: row.publicId, status: row.status, deliveries };
+}
+
+// EP-18 / 6.14: buscador público de Agente Preventivo y canales del plantel.
+// Devuelve SOLO datos seguros (identidad del plantel + canales de ayuda públicos);
+// nunca expone datos de riesgo, expedientes ni personas. Sin autenticación.
+export async function findPublicSchoolChannels(query: string) {
+  if (!isDatabaseConfigured()) return [];
+  const db = getDb();
+  const term = `%${query}%`;
+  const schools = await db
+    .select({
+      id: organizations.id,
+      publicId: organizations.publicId,
+      name: organizations.name,
+      stateCode: organizations.stateCode,
+      municipalityCode: organizations.municipalityCode
+    })
+    .from(organizations)
+    .where(and(eq(organizations.type, "school"), or(eq(organizations.publicId, query), ilike(organizations.name, term))))
+    .limit(20);
+
+  const results = [];
+  for (const school of schools) {
+    const entries = await db
+      .select({
+        name: serviceDirectoryEntries.name,
+        serviceType: serviceDirectoryEntries.serviceType,
+        contactPolicy: serviceDirectoryEntries.contactPolicy
+      })
+      .from(serviceDirectoryEntries)
+      .where(and(eq(serviceDirectoryEntries.organizationId, school.id), eq(serviceDirectoryEntries.status, "activo")))
+      .limit(20);
+
+    // Solo se exponen canales marcados como públicos y su contacto público.
+    const channels = entries
+      .filter((entry) => (entry.contactPolicy as Record<string, unknown>)?.visibility === "publica")
+      .map((entry) => ({
+        name: entry.name,
+        serviceType: entry.serviceType,
+        publicContact: String((entry.contactPolicy as Record<string, unknown>)?.publicContact ?? "")
+      }));
+
+    results.push({
+      school: { publicId: school.publicId, name: school.name, state: school.stateCode ?? "", municipality: school.municipalityCode ?? "" },
+      channels,
+      // Canales estándar siempre disponibles y seguros.
+      help: { report: "/", followUp: "/seguimiento" }
+    });
+  }
+  return results;
 }
 
 // Salud de la base para el endpoint HTTP de estado. No expone datos: solo

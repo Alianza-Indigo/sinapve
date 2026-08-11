@@ -5,6 +5,7 @@ import { createReport, listReports } from "@/server/data/repository";
 import { DatabaseNotConfiguredError } from "@/server/db";
 import { canReadReport } from "@/server/domain/access";
 import { FieldEncryptionNotConfiguredError } from "@/server/security/field-crypto";
+import { isCaptchaEnabled, verifyCaptcha } from "@/server/security/captcha";
 
 export const runtime = "nodejs";
 
@@ -41,6 +42,15 @@ export async function POST(request: Request) {
 
   if (!parsed.success) {
     return Response.json({ error: "invalid_report", issues: parsed.error.flatten() }, { status: 400 });
+  }
+
+  // Captcha activable por configuración (default desactivado). Si está apagado,
+  // no bloquea la solicitud de ayuda.
+  if (isCaptchaEnabled()) {
+    const captcha = await verifyCaptcha(parsed.data.captchaToken, request.headers.get("x-forwarded-for"));
+    if (!captcha.ok) {
+      return Response.json({ error: "captcha_failed", reason: captcha.reason }, { status: 400 });
+    }
   }
 
   let report;
