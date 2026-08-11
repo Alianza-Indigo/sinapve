@@ -64,3 +64,23 @@ corridas ejecuta la ramificación condicional**:
 - La consola de corrida (`ProtocolRunConsole`) en el expediente carga el estado
   desde `GET /api/v1/protocol-runs/{runId}` y avanza paso a paso, mostrando las
   ramas de cada decisión.
+
+## Gobernanza, simulación y accesibilidad (completado)
+
+Para no dejar el constructor a medias se añadió:
+
+- **Compuerta de aprobación**: publicar crea la versión como **borrador**
+  (`active:false`); la activación es un acto explícito de gobernanza
+  (`approveProtocolVersion`) que registra un acuse en `protocol_approvals`,
+  desactiva las anteriores y deja auditoría. Publicar ya no activa por sí solo.
+- **Retiro** de una versión vigente (`retireProtocolVersion`) y **migración
+  masiva** de las corridas activas a la versión vigente
+  (`migrateActiveRunsToLatest`), expuestos en la lista de versiones del
+  constructor. Acciones vía `POST /api/v1/protocols/versions/{code}`.
+- **Simulación** previa a publicar: `simulateProtocolGraph` (dominio puro)
+  recorre el grafo eligiendo ramas, sin persistencia; opcionalmente se registra
+  en `protocol_simulations`. **Vista compilada** muestra la ruta lineal que
+  ejecutarán las corridas.
+- **Accesibilidad por teclado** del lienzo: cada paso es enfocable (Tab), se
+  mueve con flechas, se conecta con `c` + `Enter` en el destino, se elimina con
+  `Supr` y se cancela con `Esc` (WCAG, EP / 8).

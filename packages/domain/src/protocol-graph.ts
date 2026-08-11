@@ -366,6 +366,53 @@ export function compiledToRunSteps(steps: CompiledProtocolStep[]): ProtocolStep[
   }));
 }
 
+// Simulación de una corrida contra el grafo (sin persistencia): recorre desde el
+// inicio siguiendo la única transición de cada paso lineal y, en cada decisión,
+// la rama elegida en `choices` (id del paso destino). Si una decisión aún no
+// tiene rama elegida, se detiene y la reporta en `awaiting`.
+export type ProtocolSimulationState = {
+  steps: CompiledProtocolStep[];
+  path: string[];
+  awaiting: { stepId: string; title: string; options: ProtocolTransition[] } | null;
+  done: boolean;
+};
+
+export function simulateProtocolGraph(graph: ProtocolGraph, choices: Record<string, string> = {}): ProtocolSimulationState {
+  const steps = compileProtocolGraph(graph);
+  const byId = new Map(steps.map((step) => [step.id, step]));
+  const start = steps.find((step) => step.kind === "inicio")?.id ?? steps[0]?.id ?? null;
+
+  const path: string[] = [];
+  const guard = new Set<string>();
+  let current: string | null = start;
+  let awaiting: ProtocolSimulationState["awaiting"] = null;
+  let done = false;
+
+  while (current && !guard.has(current)) {
+    guard.add(current);
+    const step = byId.get(current);
+    if (!step) break;
+    path.push(current);
+    if (step.next.length === 0) {
+      done = true;
+      break;
+    }
+    if (step.next.length === 1) {
+      current = step.next[0].to;
+      continue;
+    }
+    const choice: string | undefined = choices[current];
+    if (choice && step.next.some((transition) => transition.to === choice)) {
+      current = choice;
+      continue;
+    }
+    awaiting = { stepId: current, title: step.title, options: step.next };
+    break;
+  }
+
+  return { steps, path, awaiting, done };
+}
+
 // Reconstruye un ProtocolGraph a partir de pasos persistidos, para reabrir el
 // editor. Tolera pasos "lineales" antiguos sin metadatos de grafo: los ordena en
 // una columna y los enlaza en secuencia.

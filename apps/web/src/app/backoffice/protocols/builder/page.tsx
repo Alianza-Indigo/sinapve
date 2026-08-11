@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { ArrowLeft, Lock } from "lucide-react";
 import { Topbar } from "@/components/Topbar";
 import { ProtocolBuilder } from "@/components/ProtocolBuilder";
+import { ProtocolVersionActions } from "@/components/ProtocolVersionActions";
 import { resolveActor } from "@/server/auth/session-actor";
 import { getProtocolGraph, listAuthoredProtocolVersions } from "@/server/data/repository";
 import { hasCapability } from "@/server/domain/access";
@@ -63,16 +64,18 @@ export default async function ProtocolBuilderPage({ searchParams }: { searchPara
             las corridas de casos. Cada publicacion crea una nueva version versionada con rastro de auditoria.
           </p>
           {versions.length > 0 ? (
-            <div className="status-row" style={{ flexWrap: "wrap", marginTop: "0.5rem" }}>
-              <span className="muted" style={{ fontSize: "0.85rem" }}>Abrir existente:</span>
+            <div style={{ marginTop: "0.75rem", display: "flex", flexDirection: "column", gap: 8 }}>
+              <span className="muted" style={{ fontSize: "0.85rem" }}>Protocolos existentes</span>
               {versions.map((version) => (
-                <Link
-                  key={version.code}
-                  className={`status-pill${version.code === code ? " safe" : ""}`}
-                  href={`/backoffice/protocols/builder?code=${encodeURIComponent(version.code)}`}
-                >
-                  {version.title} · v{version.version}
-                </Link>
+                <div key={version.code} className="status-row" style={{ justifyContent: "space-between", gap: 8, flexWrap: "wrap", borderBottom: "1px solid var(--line)", paddingBottom: 8 }}>
+                  <span className="status-row" style={{ gap: 8 }}>
+                    <Link className={`status-pill${version.code === code ? " safe" : ""}`} href={`/backoffice/protocols/builder?code=${encodeURIComponent(version.code)}`}>
+                      {version.title} · v{version.version}
+                    </Link>
+                    <span className={`status-pill ${version.active ? "safe" : ""}`}>{version.active ? "Activa" : "Borrador"}</span>
+                  </span>
+                  <ProtocolVersionActions code={version.code} active={version.active} />
+                </div>
               ))}
             </div>
           ) : null}

@@ -1920,9 +1920,11 @@ export async function getProtocolGraph(code: string): Promise<ProtocolGraph | nu
 }
 
 // Publica una nueva version de protocolo a partir de un grafo del constructor.
-// Valida, compila a la lista lineal `steps[]`, incrementa la version del codigo,
-// desactiva las anteriores si se marca activa y deja rastro de auditoria.
-export async function saveProtocolVersionFromGraph(input: { graph: ProtocolGraph; actor: Actor; activate?: boolean }) {
+// Valida, compila a la lista lineal `steps[]` e incrementa la version. La version
+// nace como BORRADOR (active:false): la activacion pasa por una compuerta de
+// aprobacion explicita (approveProtocolVersion), preservando separacion de
+// funciones y trazabilidad. Deja rastro de auditoria.
+export async function saveProtocolVersionFromGraph(input: { graph: ProtocolGraph; actor: Actor }) {
   if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
 
   const validation = validateProtocolGraph(input.graph);
@@ -1930,7 +1932,6 @@ export async function saveProtocolVersionFromGraph(input: { graph: ProtocolGraph
 
   const db = getDb();
   const compiled = compileProtocolGraph(input.graph);
-  const activate = input.activate ?? true;
 
   const previous = await db
     .select({ version: protocolVersions.version })
@@ -1940,20 +1941,13 @@ export async function saveProtocolVersionFromGraph(input: { graph: ProtocolGraph
     .limit(1);
   const nextVersion = (previous[0]?.version ?? 0) + 1;
 
-  if (activate) {
-    await db
-      .update(protocolVersions)
-      .set({ active: false })
-      .where(eq(protocolVersions.code, input.graph.code));
-  }
-
   const [created] = await db
     .insert(protocolVersions)
     .values({
       code: input.graph.code,
       version: nextVersion,
       title: input.graph.title,
-      active: activate,
+      active: false,
       steps: compiled as Array<Record<string, unknown>>
     })
     .returning({
@@ -1969,12 +1963,7 @@ export async function saveProtocolVersionFromGraph(input: { graph: ProtocolGraph
     resourceType: "protocol_version",
     resourceId: created.code,
     reason: "protocol_builder",
-    metadata: {
-      actorId: input.actor.id,
-      version: created.version,
-      stepCount: compiled.length,
-      warnings: validation.warnings
-    }
+    metadata: { actorId: input.actor.id, version: created.version, stepCount: compiled.length, warnings: validation.warnings }
   });
 
   return {
@@ -1985,6 +1974,106 @@ export async function saveProtocolVersionFromGraph(input: { graph: ProtocolGraph
     stepCount: compiled.length,
     warnings: validation.warnings
   };
+}
+
+// Compuerta de aprobacion: aprueba y ACTIVA la ultima version de un codigo,
+// desactivando las anteriores, y registra el acuse de aprobacion (gobernanza).
+export async function approveProtocolVersion(input: { code: string; actor: Actor }) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const [latest] = await db
+    .select({ id: protocolVersions.id, code: protocolVersions.code, version: protocolVersions.version })
+    .from(protocolVersions)
+    .where(eq(protocolVersions.code, input.code))
+    .orderBy(desc(protocolVersions.version))
+    .limit(1);
+  if (!latest) throw new Error("PROTOCOL_VERSION_NOT_FOUND");
+
+  await db.update(protocolVersions).set({ active: false }).where(eq(protocolVersions.code, input.code));
+  await db.update(protocolVersions).set({ active: true }).where(eq(protocolVersions.id, latest.id));
+
+  const approver = await findUserRow(input.actor.id);
+  const [approval] = await db
+    .insert(protocolApprovals)
+    .values({ publicId: `proto_${nanoid(10)}`, protocolVersionId: latest.id, approverUserId: approver?.id, approvalType: "activacion", status: "aprobado", signedAt: new Date() })
+    .returning({ publicId: protocolApprovals.publicId });
+
+  await db.insert(auditEvents).values({
+    action: "protocol_version.approve",
+    resourceType: "protocol_version",
+    resourceId: latest.code,
+    reason: "governance_approval",
+    metadata: { actorId: input.actor.id, version: latest.version, approvalId: approval.publicId }
+  });
+  return { code: latest.code, version: latest.version, active: true, approvalId: approval.publicId };
+}
+
+// Retira (desactiva) la version vigente de un codigo de protocolo.
+export async function retireProtocolVersion(input: { code: string; actor: Actor }) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const retired = await db
+    .update(protocolVersions)
+    .set({ active: false })
+    .where(and(eq(protocolVersions.code, input.code), eq(protocolVersions.active, true)))
+    .returning({ version: protocolVersions.version });
+  await db.insert(auditEvents).values({
+    action: "protocol_version.retire",
+    resourceType: "protocol_version",
+    resourceId: input.code,
+    reason: "governance_retire",
+    metadata: { actorId: input.actor.id, retired: retired.length }
+  });
+  return { code: input.code, retired: retired.length };
+}
+
+// Registra una simulacion de un protocolo (escenario + resultado) para auditoria.
+export async function recordProtocolSimulation(input: { code: string; scenario: Record<string, unknown>; result: Record<string, unknown>; actor: Actor }) {
+  return createProtocolGovernanceRecord({ recordType: "simulation", protocolCode: input.code, scenario: input.scenario, result: input.result, actor: input.actor });
+}
+
+// Migra las corridas ACTIVAS que aun apuntan a versiones anteriores de un codigo
+// hacia su ultima version activa, registrando cada migracion (protocol_migrations).
+export async function migrateActiveRunsToLatest(input: { code: string; actor: Actor }) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const [target] = await db
+    .select({ id: protocolVersions.id, version: protocolVersions.version })
+    .from(protocolVersions)
+    .where(and(eq(protocolVersions.code, input.code), eq(protocolVersions.active, true)))
+    .orderBy(desc(protocolVersions.version))
+    .limit(1);
+  if (!target) throw new Error("NO_ACTIVE_VERSION");
+
+  const versionRows = await db.select({ id: protocolVersions.id }).from(protocolVersions).where(eq(protocolVersions.code, input.code));
+  const versionIds = versionRows.map((row) => row.id);
+
+  const runs = await db
+    .select({ id: protocolRuns.id, caseId: protocolRuns.caseId, protocolVersionId: protocolRuns.protocolVersionId })
+    .from(protocolRuns)
+    .where(and(eq(protocolRuns.status, "activo"), inArray(protocolRuns.protocolVersionId, versionIds)));
+  const pending = runs.filter((run) => run.protocolVersionId !== target.id);
+
+  for (const run of pending) {
+    await db.update(protocolRuns).set({ protocolVersionId: target.id }).where(eq(protocolRuns.id, run.id));
+    await db.insert(protocolMigrations).values({
+      publicId: `pmig_${nanoid(10)}`,
+      caseId: run.caseId,
+      fromProtocolVersionId: run.protocolVersionId,
+      toProtocolVersionId: target.id,
+      reason: "bulk_migration_to_active",
+      status: "aplicada"
+    });
+  }
+
+  await db.insert(auditEvents).values({
+    action: "protocol_runs.migrate_bulk",
+    resourceType: "protocol_version",
+    resourceId: input.code,
+    reason: "version_activation",
+    metadata: { actorId: input.actor.id, migrated: pending.length, toVersion: target.version }
+  });
+  return { code: input.code, migrated: pending.length, toVersion: target.version };
 }
 
 export async function createTrainingProgram(input: {

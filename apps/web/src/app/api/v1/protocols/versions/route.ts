@@ -10,8 +10,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const bodySchema = z.object({
-  graph: protocolGraphSchema,
-  activate: z.boolean().optional()
+  graph: protocolGraphSchema
 });
 
 // GET: lista la ultima version de cada protocolo autorable (para "abrir existente").
@@ -53,7 +52,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await saveProtocolVersionFromGraph({ graph: parsed.data.graph, actor, activate: parsed.data.activate });
+    const result = await saveProtocolVersionFromGraph({ graph: parsed.data.graph, actor });
     const audit = buildAuditEvent({
       actorId: actor.id,
       action: "protocol_version.publish",

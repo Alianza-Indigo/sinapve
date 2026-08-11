@@ -3,6 +3,7 @@ import {
   compileProtocolGraph,
   deriveProtocolRunState,
   graphFromSteps,
+  simulateProtocolGraph,
   validateBranchChoice,
   validateProtocolGraph,
   type ProtocolGraph
@@ -183,5 +184,22 @@ describe("protocol run engine (branch-by-branch)", () => {
   it("rejects an invalid branch choice", () => {
     const decidir = steps.find((step) => step.id === "decidir")!;
     expect(validateBranchChoice(decidir, "inexistente").ok).toBe(false);
+  });
+});
+
+describe("protocol simulation", () => {
+  it("stops at a decision awaiting a branch choice", () => {
+    const sim = simulateProtocolGraph(decisionGraph());
+    expect(sim.path).toEqual(["inicio", "decidir"]);
+    expect(sim.awaiting?.stepId).toBe("decidir");
+    expect(sim.done).toBe(false);
+  });
+
+  it("walks the chosen branch to completion", () => {
+    const sim = simulateProtocolGraph(decisionGraph(), { decidir: "leve" });
+    expect(sim.done).toBe(true);
+    expect(sim.awaiting).toBeNull();
+    expect(sim.path).toEqual(["inicio", "decidir", "leve", "fin"]);
+    expect(sim.path).not.toContain("grave");
   });
 });
