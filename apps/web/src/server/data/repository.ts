@@ -69,7 +69,8 @@ import { validateDashboardWidgets } from "../domain/dashboards";
 import { buildCertifiedWidgets } from "../domain/metrics";
 import { buildPublicIndicators } from "../domain/public-indicators";
 import { canReadCase, canReadReport } from "../domain/access";
-import { enqueueJob, claimDueJobs, completeJob, failJob } from "./jobs";
+import { claimDueJobs, completeJob, failJob } from "./jobs";
+import { enqueueDurable } from "../jobs/adapter";
 import { rankDocuments, extractiveSnippet } from "../ai/rag";
 import { callAiGateway, isAiConfigured } from "../ai/gateway";
 import { containsSensitiveDetail, shouldDeliver, type NotificationPriority } from "../notifications/policy";
@@ -1279,7 +1280,7 @@ export async function createReferral(input: {
   // Programa el vencimiento de acuse como trabajo durable (circuito cerrado). Si
   // no hay fecha de acuse, no se programa. Idempotente por referencia.
   if (input.requiredAckBy) {
-    await enqueueJob({
+    await enqueueDurable({
       jobType: "referral_ack_timeout",
       idempotencyKey: `referral_ack_timeout:${referral.publicId}`,
       payload: { referralPublicId: referral.publicId },
@@ -1378,7 +1379,7 @@ export async function startPersistedProtocolRun(input: { caseId: string; actor: 
   });
 
   // Recordatorio durable de revision de SLA del protocolo (11.6).
-  await enqueueJob({
+  await enqueueDurable({
     jobType: "protocol_sla_check",
     idempotencyKey: `protocol_sla_check:${run.id}`,
     payload: { casePublicId: caseRow.publicId, runId: run.id },
