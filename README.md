@@ -40,3 +40,10 @@ Provisionar por Vercel Marketplace:
 - Vercel Workflows y Queues para SLA, fan-out y notificaciones.
 
 Las variables viven en `.env.example`. No se deben agregar variables ni paquetes de Supabase.
+
+## Evidencia privada
+
+La ruta `POST /api/v1/cases/{caseId}/evidence` sube archivos permitidos a Vercel Blob con `access: "private"`.
+La lectura pasa por `GET /api/v1/cases/{caseId}/evidence?pathname=...`, donde se valida el alcance del expediente antes de llamar `get()` al store privado.
+
+En local sin `BLOB_READ_WRITE_TOKEN`, esas rutas responden `private_blob_not_configured` para evitar simulaciones inseguras.

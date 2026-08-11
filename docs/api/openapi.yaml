@@ -44,6 +44,47 @@ paths:
       responses:
         "200":
           description: Case file with timeline and protocol state.
+  /cases/{caseId}/evidence:
+    post:
+      summary: Upload authorized evidence to private Vercel Blob storage.
+      operationId: uploadCaseEvidence
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: Private evidence blob metadata and server delivery path.
+        "503":
+          description: Private Blob store is not configured.
+    get:
+      summary: Stream an authorized private evidence blob through a server function.
+      operationId: readCaseEvidence
+      parameters:
+        - name: caseId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: pathname
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Private file stream after case authorization.
+        "304":
+          description: Evidence blob not modified for the supplied ETag.
+        "403":
+          description: User scope cannot access this case evidence.
   /cases/{caseId}/protocol-runs:
     post:
       summary: Start a protocol run for a case.
