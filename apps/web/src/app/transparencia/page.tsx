@@ -4,11 +4,12 @@ import { Topbar } from "@/components/Topbar";
 import { ModuleRecordsTable } from "@/components/ModuleRecordsTable";
 import { MetricWidgetChart } from "@/components/MetricWidgetChart";
 import { getPublicIndicators, listPublishedResources } from "@/server/data/repository";
+import { getTranslator } from "@/i18n/server";
 
 export const dynamic = "force-dynamic";
 
 export default async function PublicPortalPage() {
-  const [resources, indicators] = await Promise.all([listPublishedResources(), getPublicIndicators()]);
+  const [resources, indicators, t] = await Promise.all([listPublishedResources(), getPublicIndicators(), getTranslator()]);
 
   return (
     <div className="page-shell">
@@ -20,13 +21,13 @@ export default async function PublicPortalPage() {
         </Link>
         <section className="panel" style={{ marginTop: "1rem" }}>
           <p className="eyebrow">Portal publico</p>
-          <h1 style={{ fontSize: "clamp(2rem, 5vw, 3.2rem)" }}>Transparencia y recursos</h1>
+          <h1 style={{ fontSize: "clamp(2rem, 5vw, 3.2rem)" }}>{t("portal.transparency.title")}</h1>
           <p className="lead">
             Materiales publicados y datos no sensibles. Los expedientes individuales nunca se exponen en este portal.
           </p>
         </section>
         <section className="panel" style={{ marginTop: "1rem" }}>
-          <h2>Indicadores agregados</h2>
+          <h2>{t("portal.indicators.title")}</h2>
           <p className="muted">
             Cifras agregadas con umbral de privacidad de {indicators.minimumCellCount}. Los grupos pequenos se reservan para no
             reidentificar personas. Actualizado {indicators.generatedAt}.

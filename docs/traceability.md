@@ -49,3 +49,12 @@
 | Catalogo G01-G32 en capa semantica (dbt) | EP-13 | Como analista consumo las 32 graficas certificadas desde modelos versionados, sin formulas en el navegador | `analytics/dbt/models/graphs/*`, `dbt-graphs.test.ts` |
 | Formulas certificadas 8.3 completas | EP-13 | Como oficina de analitica versiono las 7 formulas con inclusiones/exclusiones y pruebas | `analytics/dbt/models/certified/*` |
 | Captura de insumos analiticos reales | EP-13 | Como autoridad registro INRE, encuestas, matricula, permanencia, impacto y presupuesto sin datos inventados | API `/analytics/inputs`, tablas `risk_scores`/`survey_responses`/`enrollment_figures`/`school_retention`/`impact_measurements`/`budget_lines` |
+| Captura offline cifrada + sincronizacion | EP-02 | Como reportante sin conexion guardo mi solicitud cifrada localmente y se envia al reconectar | `public/sw.js`, `lib/offline/*`, `ReportForm` |
+| Captcha anti-abuso activable | EP-02 | Como plataforma exijo captcha (Turnstile) solo si se configura; por defecto no bloquea la ayuda | `captcha.test.ts`, `/api/v1/reports` |
+| Saneo de adjuntos (EXIF + antivirus) | EP-02 | Como plataforma elimino metadatos EXIF y escaneo antivirus antes de almacenar evidencia | `attachment-safety.test.ts` |
+| Reporte entrante por SMS | EP-02 | Como comunidad envio una solicitud por SMS que ingresa como reporte confidencial | API `/reports/inbound-sms` |
+| Transcripcion de audio con confirmacion | EP-02 | Como reportante adjunto audio y obtengo un borrador de transcripcion que un humano confirma | API `/ai/transcriptions` |
+| QR verificable de certificado | EP-10 | Como cualquiera valido un certificado escaneando su QR | API `/certifications/verify/{code}/qr` |
+| xAPI (SCORM equivalente) | EP-10 | Como LMS registro actividad de formacion con statements xAPI idempotentes | API `/training/xapi/statements` |
+| Buscador publico de APVE | EP-18 | Como ciudadania localizo canales seguros del plantel sin exponer datos de riesgo | API `/public/agents` |
+| Arquitectura i18n | EP/13 | Como producto resuelvo locale por cookie/Accept-Language con diccionarios | `i18n.test.ts`, `i18n/*` |
