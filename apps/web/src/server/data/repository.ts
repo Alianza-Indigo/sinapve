@@ -2787,6 +2787,40 @@ export async function listOrganizations() {
     .limit(250);
 }
 
+// Lista usuarios institucionales con sus adscripciones vigentes (rol + organización)
+// para la pantalla de administración de usuarios. Solo metadatos de acceso.
+export async function listUsersWithAssignments() {
+  if (!isDatabaseConfigured()) return [];
+  const db = getDb();
+  const rows = await db
+    .select({
+      externalSubject: users.externalSubject,
+      displayName: users.displayName,
+      email: users.email,
+      disabledAt: users.disabledAt,
+      role: userAssignments.role,
+      organizationName: organizations.name,
+      organizationPublicId: organizations.publicId
+    })
+    .from(users)
+    .leftJoin(userAssignments, and(eq(userAssignments.userId, users.id), isNull(userAssignments.endsAt)))
+    .leftJoin(organizations, eq(organizations.id, userAssignments.organizationId))
+    .limit(500);
+
+  const byUser = new Map<string, { externalSubject: string; displayName: string; email: string | null; disabled: boolean; assignments: Array<{ role: string; organization: string; organizationPublicId: string }> }>();
+  for (const row of rows) {
+    let entry = byUser.get(row.externalSubject);
+    if (!entry) {
+      entry = { externalSubject: row.externalSubject, displayName: row.displayName, email: row.email, disabled: Boolean(row.disabledAt), assignments: [] };
+      byUser.set(row.externalSubject, entry);
+    }
+    if (row.role && row.organizationPublicId) {
+      entry.assignments.push({ role: row.role, organization: row.organizationName ?? row.organizationPublicId, organizationPublicId: row.organizationPublicId });
+    }
+  }
+  return [...byUser.values()].sort((a, b) => a.displayName.localeCompare(b.displayName));
+}
+
 export async function createOrganization(input: {
   publicId?: string;
   name: string;

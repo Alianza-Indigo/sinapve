@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { headers } from "next/headers";
-import { FileText, Lock, LogOut } from "lucide-react";
+import { FileText, Lock, LogOut, Users } from "lucide-react";
 import { BackofficeTopbar } from "@/components/BackofficeTopbar";
 import { DashboardTopbar } from "@/components/DashboardTopbar";
 import { RoleDashboard } from "@/components/RoleDashboard";
@@ -65,6 +65,11 @@ export default async function BackofficePage({ searchParams }: { searchParams: P
             <span />
           )}
           <div className="status-row" style={{ gap: 8 }}>
+            {hasCapability(actor, "configuration:read") ? (
+              <Link className="button" href="/backoffice/usuarios">
+                <Users size={16} aria-hidden="true" /> Usuarios
+              </Link>
+            ) : null}
             {hasCapability(actor, "content:publish") ? (
               <Link className="button" href="/backoffice/contenido">
                 <FileText size={16} aria-hidden="true" /> Publicaciones
