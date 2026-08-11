@@ -34,7 +34,7 @@ export function PublicHeader({ current }: { current?: string }) {
             <Image src="/brand/logo.png" alt="SINAPVE" width={44} height={44} priority />
             <span>
               <span className="brand-word">SINAPVE</span>
-              <span className="brand-sub">Sistema Nacional del Agente Preventivo de Violencia Escolar</span>
+              <span className="brand-sub">Sistema Nacional Preventivo de Violencia Escolar</span>
             </span>
           </Link>
           <nav className="site-nav" aria-label="Navegación principal">

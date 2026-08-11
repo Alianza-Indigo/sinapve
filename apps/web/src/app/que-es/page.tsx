@@ -10,7 +10,7 @@ export default function QueEsPage() {
         <p className="eyebrow">Conoce la plataforma</p>
         <h1 className="section-title">¿Qué es SINAPVE?</h1>
         <p className="section-sub">
-          Sistema Nacional del Agente Preventivo de Violencia Escolar
+          Sistema Nacional Preventivo de Violencia Escolar
         </p>
 
         <section className="panel" style={{ marginTop: "1.5rem" }}>

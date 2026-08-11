@@ -21,7 +21,7 @@ const faqs = [
 ];
 
 const glossary = [
-  { term: "SINAPVE", def: "Sistema Nacional del Agente Preventivo de Violencia Escolar; plataforma que coordina la prevención, detección, atención e intervención de la violencia escolar." },
+  { term: "SINAPVE", def: "Sistema Nacional Preventivo de Violencia Escolar; plataforma que coordina la prevención, detección, atención e intervención de la violencia escolar." },
   { term: "APVE", def: "Agente Preventivo de Violencia Escolar; figura formada y certificada para impulsar la prevención y acompañar la aplicación de los protocolos." },
   { term: "INRE", def: "Instancia Nacional de Registro de Expedientes; concentra de forma segura y confidencial los expedientes generados por los reportes." },
   { term: "UEPE", def: "Unidad Escolar de Prevención y Enlace; equipo en cada plantel que recibe, canaliza y da seguimiento a las situaciones reportadas." },

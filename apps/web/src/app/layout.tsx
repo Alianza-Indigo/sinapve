@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "SINAPVE",
-  description: "Plataforma Nacional del Agente Preventivo de Violencia Escolar"
+  description: "Sistema Nacional Preventivo de Violencia Escolar"
 };
 
 export const viewport: Viewport = {

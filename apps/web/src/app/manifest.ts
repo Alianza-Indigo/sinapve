@@ -4,7 +4,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "SINAPVE",
     short_name: "SINAPVE",
-    description: "Plataforma Nacional del Agente Preventivo de Violencia Escolar",
+    description: "Sistema Nacional Preventivo de Violencia Escolar",
     start_url: "/",
     display: "standalone",
     background_color: "#F7F7FC",
