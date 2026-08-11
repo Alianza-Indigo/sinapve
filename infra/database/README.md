@@ -12,18 +12,34 @@ gestionan con **Drizzle**. Las migraciones se **generan** en el repo y se
   PostGIS y crea `territorial_points`).
 - Config: `apps/web/drizzle.config.ts` (usa `DATABASE_URL`).
 
-## Flujo
+## Aplicación automática desde el repo (despliegue)
+
+Las migraciones se aplican **como parte del build de Vercel**, definido en el
+propio repo (`vercel.json` → `buildCommand`):
+
+```json
+"buildCommand": "corepack pnpm db:migrate:deploy && corepack pnpm build"
+```
+
+- `db:migrate:deploy` aplica las migraciones pendientes con la `DATABASE_URL`
+  del ambiente (idempotente). Si no hay base enlazada (build local/preview sin
+  DB) **se omite sin romper el build**.
+- Cada deploy desde el repo (Preview/Staging/Production) aplica lo pendiente
+  contra la base de ese ambiente antes de construir.
+
+## Flujo manual
 
 ```bash
 # 1) Generar migración tras cambiar el esquema (autor).
 corepack pnpm db:generate
 
-# 2) Aplicar migraciones a la base enlazada (por ambiente).
+# 2) Aplicar a mano (estricto: falla si no hay DATABASE_URL).
 DATABASE_URL="postgres://...neon.tech/db?sslmode=require" corepack pnpm db:migrate
 ```
 
-`db:migrate` (apps/web/scripts/migrate.ts) usa el mismo driver Neon HTTP de la
-app y es idempotente: solo ejecuta las migraciones nuevas.
+`db:migrate` y `db:migrate:deploy` comparten `apps/web/scripts/migrate.ts` (driver
+Neon HTTP, idempotente). La única diferencia es que `:deploy` usa `--optional`
+para no romper builds sin base.
 
 ## Promoción (PRD 11.7)
 

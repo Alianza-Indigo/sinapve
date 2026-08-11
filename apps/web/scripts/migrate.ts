@@ -8,8 +8,15 @@ import { migrate } from "drizzle-orm/neon-http/migrator";
 //
 // Uso:  DATABASE_URL="postgres://..." corepack pnpm --filter @sinapve/web db:migrate
 async function main() {
+  // Modo opcional (para el build de Vercel): si no hay base enlazada, se omite
+  // sin romper el despliegue. En ejecucion manual/CI (sin --optional) es estricto.
+  const optional = process.argv.includes("--optional") || process.env.MIGRATE_OPTIONAL === "1";
   const url = process.env.DATABASE_URL;
   if (!url) {
+    if (optional) {
+      console.log("db:migrate omitido: no hay DATABASE_URL enlazada (build sin base).");
+      return;
+    }
     console.error("DATABASE_URL es requerida para aplicar migraciones. Enlace la base (Neon) antes de migrar.");
     process.exit(1);
   }

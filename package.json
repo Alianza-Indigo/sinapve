@@ -14,6 +14,8 @@
     "test": "corepack pnpm --filter @sinapve/web test",
     "db:generate": "corepack pnpm --filter @sinapve/web db:generate",
     "db:migrate": "corepack pnpm --filter @sinapve/web db:migrate",
+    "db:migrate:deploy": "corepack pnpm --filter @sinapve/web db:migrate:deploy",
+    "vercel-build": "corepack pnpm db:migrate:deploy && corepack pnpm build",
     "db:seed": "corepack pnpm --filter @sinapve/web db:seed",
     "turbo:build": "turbo run build",
     "turbo:test": "turbo run test"
