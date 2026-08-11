@@ -2,12 +2,13 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { Topbar } from "@/components/Topbar";
 import { ModuleRecordsTable } from "@/components/ModuleRecordsTable";
-import { listPublishedResources } from "@/server/data/repository";
+import { MetricWidgetChart } from "@/components/MetricWidgetChart";
+import { getPublicIndicators, listPublishedResources } from "@/server/data/repository";
 
 export const dynamic = "force-dynamic";
 
 export default async function PublicPortalPage() {
-  const resources = await listPublishedResources();
+  const [resources, indicators] = await Promise.all([listPublishedResources(), getPublicIndicators()]);
 
   return (
     <div className="page-shell">
@@ -23,6 +24,27 @@ export default async function PublicPortalPage() {
           <p className="lead">
             Materiales publicados y datos no sensibles. Los expedientes individuales nunca se exponen en este portal.
           </p>
+        </section>
+        <section className="panel" style={{ marginTop: "1rem" }}>
+          <h2>Indicadores agregados</h2>
+          <p className="muted">
+            Cifras agregadas con umbral de privacidad de {indicators.minimumCellCount}. Los grupos pequenos se reservan para no
+            reidentificar personas. Actualizado {indicators.generatedAt}.
+          </p>
+          <div className="widget-grid">
+            {indicators.kpis.map((kpi) => (
+              <article key={kpi.code} className="panel metric" aria-labelledby={`${kpi.code}-kpi`}>
+                <h3 id={`${kpi.code}-kpi`}>{kpi.label}</h3>
+                <div className="metric-value">{kpi.value}</div>
+                {kpi.suppressed ? <p className="muted">Reservado por privacidad</p> : null}
+              </article>
+            ))}
+          </div>
+          <div className="widget-grid" style={{ marginTop: "1rem" }}>
+            {indicators.charts.map((widget) => (
+              <MetricWidgetChart key={widget.id} widget={widget} />
+            ))}
+          </div>
         </section>
         <section className="panel" style={{ marginTop: "1rem" }}>
           <h2>Recursos publicados</h2>

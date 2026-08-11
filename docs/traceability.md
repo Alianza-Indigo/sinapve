@@ -36,3 +36,7 @@
 | Aprobacion editorial/legal de campanas | EP-15 | Como comunicador publico campanas solo con doble aprobacion | API `/campaigns/{campaignId}/advance` |
 | Constructor de tableros certificados | EP-17 | Como administrador publico tableros validando widgets certificados sin SQL libre | `dashboards.test.ts`, API `/dashboards/{dashboardId}/publish` |
 | Adaptaciones con revision multidisciplinaria | EP-17 | Como UEPE avanzo la revision tecnica/juridica/accesible/privacidad antes de aprobar | API `/adaptations/{adaptationId}/advance` |
+| Baja de cuenta y revocacion de adscripcion | EP-01 | Como administrador desactivo cuentas y cierro adscripciones revocando sesiones al instante | API `/users/{externalSubject}/deactivate`, `/revoke-assignment` |
+| Permisos efectivos explicables | EP-01 | Como sistema explico cada capacidad por el rol que la otorga | `access-effective.test.ts` |
+| Graficas accesibles con tabla equivalente | EP-13 | Como usuario autorizado veo indicadores certificados en SVG accesible con tabla de datos | `MetricWidgetChart`, backoffice analitica |
+| Indicadores publicos agregados | EP-18 | Como ciudadania consulto cifras agregadas con umbral de privacidad sin registros individuales | `public-indicators.test.ts`, API `/public/indicators`, portal `/transparencia` |

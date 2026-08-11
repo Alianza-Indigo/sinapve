@@ -80,6 +80,13 @@ Sobre la base transaccional, la plataforma opera el ciclo de vida completo de ca
 - `POST /api/v1/report-jobs` autogenera un borrador desde metricas certificadas y `.../{reportId}/approve` exige aprobacion humana (EP-14).
 - `POST /api/v1/dashboards/{dashboardId}/publish` publica tableros validando que solo usen widgets certificados, sin SQL ni formulas libres (EP-13/EP-17).
 
+## Identidad, analitica y portal publico
+
+- Baja de cuenta e adscripcion: `POST /api/v1/users/{externalSubject}/deactivate` desactiva la cuenta y revoca todas sus sesiones; `POST .../revoke-assignment` cierra la adscripcion y revoca sesiones, de modo que un cambio de adscripcion retira accesos de inmediato (EP-01).
+- Permisos efectivos explicables por rol (`effectivePermissions`, EP-01/3.2).
+- Analitica accesible: los indicadores certificados se representan en SVG propio (sin librerias externas), con `role="img"`, tabla de datos equivalente y modo monocromatico imprimible (EP-13). Se muestran en el backoffice de analitica/riesgo/mapa segun el alcance del actor.
+- Portal publico: `GET /api/v1/public/indicators` y la pagina `/transparencia` exponen cifras agregadas con umbral de privacidad; nunca folios ni registros individuales (EP-18).
+
 ## Seguridad reforzada de servidor
 
 - Segundo factor (MFA): se resuelve en el proveedor de identidad institucional (OIDC/SAML), fuera de la aplicacion. La app NO implementa MFA propio. Ver `docs/adr/0003-mfa-en-proveedor-de-identidad.md`.

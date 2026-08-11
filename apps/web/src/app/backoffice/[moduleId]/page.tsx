@@ -5,10 +5,14 @@ import { ArrowLeft, Lock } from "lucide-react";
 import { Topbar } from "@/components/Topbar";
 import { ModuleCreateForm } from "@/components/ModuleCreateForm";
 import { ModuleRecordsTable } from "@/components/ModuleRecordsTable";
+import { KpiCard } from "@/components/KpiCard";
+import { MetricWidgetChart } from "@/components/MetricWidgetChart";
 import { getActorFromHeaders } from "@/server/auth/current-actor";
-import { listModuleRecords, listPlatformModules } from "@/server/data/repository";
+import { getCertifiedWidgetsForActor, listModuleRecords, listPlatformModules } from "@/server/data/repository";
 import { canReadModule } from "@/server/domain/access";
-import type { PlatformModuleId } from "@/server/domain/types";
+import type { MetricWidget, PlatformModuleId } from "@/server/domain/types";
+
+const analyticsModules: PlatformModuleId[] = ["analytics", "risk", "map"];
 
 const validModuleIds = [
   "reports",
@@ -70,6 +74,10 @@ export default async function BackofficeModulePage({ params }: { params: Promise
   const module = modules.find((item) => item.id === moduleId);
   if (!module) notFound();
 
+  const isAnalytics = analyticsModules.includes(moduleId as PlatformModuleId);
+  const widgets: MetricWidget[] = isAnalytics ? await getCertifiedWidgetsForActor(actor) : [];
+  const chartWidgets = widgets.filter((widget) => widget.series.length > 0).slice(0, 6);
+
   return (
     <div className="page-shell">
       <Topbar />
@@ -83,6 +91,22 @@ export default async function BackofficeModulePage({ params }: { params: Promise
           <h1 style={{ fontSize: "clamp(2rem, 5vw, 3.2rem)" }}>{module.title}</h1>
           <p className="lead">{module.description}</p>
         </section>
+        {isAnalytics ? (
+          <>
+            <section className="widget-grid" aria-label="Indicadores certificados" style={{ marginTop: "1rem" }}>
+              {widgets.slice(0, 6).map((widget) => (
+                <KpiCard key={widget.id} widget={widget} />
+              ))}
+            </section>
+            {chartWidgets.length > 0 ? (
+              <section className="widget-grid" aria-label="Graficas accesibles" style={{ marginTop: "1rem" }}>
+                {chartWidgets.map((widget) => (
+                  <MetricWidgetChart key={`chart-${widget.id}`} widget={widget} />
+                ))}
+              </section>
+            ) : null}
+          </>
+        ) : null}
         <section className="panel" style={{ marginTop: "1rem" }}>
           <p className="eyebrow">Operacion</p>
           <h2>Crear registro</h2>

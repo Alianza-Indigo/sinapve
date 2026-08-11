@@ -212,6 +212,34 @@ p {
   min-height: 140px;
 }
 
+.metric-chart {
+  color: var(--indigo);
+}
+
+.metric-chart figcaption h3 {
+  margin: 4px 0 0;
+}
+
+.metric-chart-svg {
+  display: block;
+  margin: 12px 0;
+}
+
+.metric-chart details {
+  color: var(--ink);
+}
+
+.metric-chart summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+
+@media print {
+  .metric-chart-svg {
+    filter: grayscale(100%);
+  }
+}
+
 .metric-value {
   margin-top: 12px;
   font-size: 1.8rem;

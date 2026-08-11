@@ -40,6 +40,23 @@ export function hasCapability(actor: Actor, capability: Capability) {
   return actor.roles.some((role) => roleCapabilities[role].includes(capability));
 }
 
+// EP-01 / 3.2 / 6.1: cada permiso efectivo debe poder explicarse por rol,
+// atributo y alcance. Devuelve la lista deduplicada de capacidades del actor con
+// el rol que la otorga, para exponer permisos efectivos sin adivinar en cliente.
+export function effectivePermissions(actor: Actor): Array<{ capability: Capability; grantedByRole: Role }> {
+  const seen = new Set<Capability>();
+  const result: Array<{ capability: Capability; grantedByRole: Role }> = [];
+  for (const role of actor.roles) {
+    for (const capability of roleCapabilities[role] ?? []) {
+      if (!seen.has(capability)) {
+        seen.add(capability);
+        result.push({ capability, grantedByRole: role });
+      }
+    }
+  }
+  return result;
+}
+
 export function canReadReport(actor: Actor, report: HelpReport) {
   if (!hasCapability(actor, "report:read")) return false;
   if (actor.roles.includes("FEDERAL")) return false;

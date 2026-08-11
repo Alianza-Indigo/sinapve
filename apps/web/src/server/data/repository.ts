@@ -1,5 +1,5 @@
 import { nanoid } from "nanoid";
-import { and, desc, eq, or } from "drizzle-orm";
+import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { DatabaseNotConfiguredError, getDb, isDatabaseConfigured } from "../db";
 import { decryptSensitiveText, encryptSensitiveText, sha256Digest } from "../security/field-crypto";
 import {
@@ -65,6 +65,8 @@ import { evaluateMediation } from "../domain/mediation";
 import { isReferralOverdue } from "../domain/sla";
 import { validateDashboardWidgets } from "../domain/dashboards";
 import { buildCertifiedWidgets } from "../domain/metrics";
+import { buildPublicIndicators } from "../domain/public-indicators";
+import { canReadCase, canReadReport } from "../domain/access";
 import type { Actor, CaseFile, CaseState, CaseTimelineEvent, HelpReport, PlatformModuleId, PlatformModuleSummary, PlatformRecord, ReportMode, Severity } from "../domain/types";
 
 export type LiveDataStatus = {
@@ -2542,6 +2544,88 @@ export async function listPrivacyRequests() {
     .orderBy(desc(privacyRequests.createdAt))
     .limit(100);
   return rows.map((row) => platformRecord({ ...row, detail: row.detail ? `Vence ${toIso(row.detail)}` : "" }));
+}
+
+// EP-13: metricas certificadas ya filtradas por el alcance efectivo del actor,
+// para render autenticado (tarjetas y graficas accesibles).
+export async function getCertifiedWidgetsForActor(actor: Actor) {
+  if (!isDatabaseConfigured()) return buildCertifiedWidgets([], []);
+  const [allReports, allCases] = await Promise.all([listReports(), listCases()]);
+  const reports_ = allReports.filter((report) => canReadReport(actor, report));
+  const cases_ = allCases.filter((caseFile) => canReadCase(actor, caseFile));
+  return buildCertifiedWidgets(reports_, cases_);
+}
+
+// EP-18: indicadores agregados para el portal publico (con supresion de celdas
+// pequenas). No expone folios ni registros individuales.
+export async function getPublicIndicators() {
+  if (!isDatabaseConfigured()) {
+    return buildPublicIndicators([], []);
+  }
+  const [reports_, cases_] = await Promise.all([listReports(), listCases()]);
+  return buildPublicIndicators(reports_, cases_);
+}
+
+// EP-01: baja de cuenta. Desactiva al usuario y revoca TODAS sus sesiones para
+// que ninguna cuenta desactivada conserve sesiones validas (6.1).
+export async function deactivateUser(input: { externalSubject: string; reason: string; actor: Actor }) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const user = await findUserRow(input.externalSubject);
+  if (!user) throw new Error("USER_NOT_FOUND");
+
+  const now = new Date();
+  await db.update(users).set({ disabledAt: now }).where(eq(users.id, user.id));
+  const revoked = await db
+    .update(userSessions)
+    .set({ revokedAt: now })
+    .where(and(eq(userSessions.userId, user.id), isNull(userSessions.revokedAt)))
+    .returning({ publicId: userSessions.publicId });
+  await db
+    .update(userAssignments)
+    .set({ endsAt: now })
+    .where(and(eq(userAssignments.userId, user.id), isNull(userAssignments.endsAt)));
+
+  await db.insert(auditEvents).values({
+    action: "user.deactivate",
+    resourceType: "user",
+    resourceId: user.externalSubject,
+    reason: input.reason,
+    metadata: { actorId: input.actor.id, revokedSessions: revoked.length }
+  });
+  return { id: user.externalSubject, status: "desactivado", revokedSessions: revoked.length };
+}
+
+// EP-01: fin de adscripcion. Cierra la asignacion vigente y revoca sesiones para
+// que un cambio de adscripcion retire accesos anteriores de inmediato (6.1).
+export async function revokeUserAssignment(input: { externalSubject: string; organizationPublicId: string; reason: string; actor: Actor }) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const user = await findUserRow(input.externalSubject);
+  if (!user) throw new Error("USER_NOT_FOUND");
+  const organization = await findOrganizationRow(input.organizationPublicId);
+  if (!organization) throw new Error("ORGANIZATION_NOT_FOUND");
+
+  const now = new Date();
+  const ended = await db
+    .update(userAssignments)
+    .set({ endsAt: now })
+    .where(and(eq(userAssignments.userId, user.id), eq(userAssignments.organizationId, organization.id), isNull(userAssignments.endsAt)))
+    .returning({ id: userAssignments.id });
+  const revoked = await db
+    .update(userSessions)
+    .set({ revokedAt: now })
+    .where(and(eq(userSessions.userId, user.id), isNull(userSessions.revokedAt)))
+    .returning({ publicId: userSessions.publicId });
+
+  await db.insert(auditEvents).values({
+    action: "user_assignment.revoke",
+    resourceType: "user",
+    resourceId: user.externalSubject,
+    reason: input.reason,
+    metadata: { actorId: input.actor.id, organizationPublicId: organization.publicId, endedAssignments: ended.length, revokedSessions: revoked.length }
+  });
+  return { id: user.externalSubject, endedAssignments: ended.length, revokedSessions: revoked.length };
 }
 
 // ---------------------------------------------------------------------------
