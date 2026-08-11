@@ -2,6 +2,7 @@ export * from "./access";
 export * from "./ai-policy";
 export * from "./certified-metrics";
 export * from "./dashboards";
+export * from "./dashboard-presets";
 export * from "./inre";
 export * from "./mediation";
 export * from "./metrics";

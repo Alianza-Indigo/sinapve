@@ -87,6 +87,7 @@ import { validateDashboardWidgets } from "../domain/dashboards";
 import { buildCertifiedWidgets } from "../domain/metrics";
 import { buildPublicIndicators } from "../domain/public-indicators";
 import { canReadCase, canReadReport } from "../domain/access";
+import { presetForRoles, resolveKpis, buildDashboardPanels } from "../domain/dashboard-presets";
 import { claimDueJobs, completeJob, failJob } from "./jobs";
 import { enqueueDurable } from "../jobs/adapter";
 import { rankDocuments, extractiveSnippet } from "../ai/rag";
@@ -2819,6 +2820,28 @@ export async function listPrivacyRequests() {
 
 // EP-13: metricas certificadas ya filtradas por el alcance efectivo del actor,
 // para render autenticado (tarjetas y graficas accesibles).
+// Sistema de Dashboards (Fase 1): compone el panel del actor a partir de su
+// preset (rol) con datos reales ya filtrados por permiso. No inventa cifras.
+export async function getDashboardModel(actor: Actor) {
+  const preset = presetForRoles(actor.roles);
+  const [allReports, allCases] = isDatabaseConfigured() ? await Promise.all([listReports(), listCases()]) : [[], []];
+  const reports = allReports.filter((report) => canReadReport(actor, report));
+  const cases = allCases.filter((caseFile) => canReadCase(actor, caseFile));
+  const widgets = buildCertifiedWidgets(reports, cases);
+  const ctx = { actor, cases, reports, widgets };
+  const selected = preset.widgetIds
+    .map((id) => widgets.find((widget) => widget.id === id))
+    .filter((widget): widget is (typeof widgets)[number] => Boolean(widget));
+  return {
+    preset,
+    kpis: resolveKpis(preset, ctx),
+    panels: buildDashboardPanels(preset, ctx),
+    widgets: selected,
+    updatedAt: toIso(new Date()),
+    databaseConfigured: isDatabaseConfigured()
+  };
+}
+
 export async function getCertifiedWidgetsForActor(actor: Actor) {
   if (!isDatabaseConfigured()) return buildCertifiedWidgets([], []);
   const [allReports, allCases] = await Promise.all([listReports(), listCases()]);
