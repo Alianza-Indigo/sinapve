@@ -8,6 +8,7 @@ import {
   aiFeedback,
   aiDecisionLogs,
   aiModelRegistry,
+  approvedDocuments,
   breakGlassGrants,
   caseAssignments,
   caseEvidenceFiles,
@@ -67,6 +68,9 @@ import { validateDashboardWidgets } from "../domain/dashboards";
 import { buildCertifiedWidgets } from "../domain/metrics";
 import { buildPublicIndicators } from "../domain/public-indicators";
 import { canReadCase, canReadReport } from "../domain/access";
+import { enqueueJob, claimDueJobs, completeJob, failJob } from "./jobs";
+import { rankDocuments, extractiveSnippet } from "../ai/rag";
+import { callAiGateway, isAiConfigured } from "../ai/gateway";
 import type { Actor, CaseFile, CaseState, CaseTimelineEvent, HelpReport, PlatformModuleId, PlatformModuleSummary, PlatformRecord, ReportMode, Severity } from "../domain/types";
 
 export type LiveDataStatus = {
@@ -1268,6 +1272,18 @@ export async function createReferral(input: {
     .returning({ publicId: referrals.publicId, status: referrals.status });
 
   await db.update(cases).set({ state: "escalado" }).where(eq(cases.id, caseRow.id));
+
+  // Programa el vencimiento de acuse como trabajo durable (circuito cerrado). Si
+  // no hay fecha de acuse, no se programa. Idempotente por referencia.
+  if (input.requiredAckBy) {
+    await enqueueJob({
+      jobType: "referral_ack_timeout",
+      idempotencyKey: `referral_ack_timeout:${referral.publicId}`,
+      payload: { referralPublicId: referral.publicId },
+      runAt: new Date(input.requiredAckBy)
+    });
+  }
+
   await db.insert(caseEvents).values({
     caseId: caseRow.id,
     title: "Escalamiento creado",
@@ -1356,6 +1372,14 @@ export async function startPersistedProtocolRun(input: { caseId: string; actor: 
     resourceId: caseRow.publicId,
     reason: "human_confirmed_protocol",
     metadata: { actorId: input.actor.id, protocolCode: version.code, workflowRunId }
+  });
+
+  // Recordatorio durable de revision de SLA del protocolo (11.6).
+  await enqueueJob({
+    jobType: "protocol_sla_check",
+    idempotencyKey: `protocol_sla_check:${run.id}`,
+    payload: { casePublicId: caseRow.publicId, runId: run.id },
+    runAt: new Date(Date.now() + 30 * 60_000)
   });
 
   return {
@@ -3157,4 +3181,168 @@ export async function generateReportDraft(input: {
     narrative,
     actor: input.actor
   });
+}
+
+// EP-09: alta de documento en la base aprobada para el asistente RAG.
+export async function createApprovedDocument(input: {
+  docType: string;
+  title: string;
+  sourceRef: string;
+  body: string;
+  keywords?: string;
+  version?: number;
+  actor: Actor;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const publicId = `doc_${nanoid(10)}`;
+  const [doc] = await db
+    .insert(approvedDocuments)
+    .values({
+      publicId,
+      docType: input.docType,
+      title: input.title,
+      sourceRef: input.sourceRef,
+      body: input.body,
+      keywords: input.keywords ?? "",
+      version: input.version ?? 1
+    })
+    .returning({ publicId: approvedDocuments.publicId, title: approvedDocuments.title, version: approvedDocuments.version });
+  await db.insert(auditEvents).values({
+    action: "approved_document.create",
+    resourceType: "approved_document",
+    resourceId: doc.publicId,
+    reason: "rag_corpus_update",
+    metadata: { actorId: input.actor.id, docType: input.docType }
+  });
+  return doc;
+}
+
+// EP-09 / 7.3: asistente de protocolos con RAG. Recupera de la base aprobada,
+// cita fuente y version, e indica confianza y datos faltantes. Con el gateway
+// activo, sintetiza una respuesta fundamentada citando esas fuentes; sin el,
+// devuelve un extracto de la mejor fuente. Nunca responde sin fuente.
+export async function answerProtocolQuestion(input: { question: string; actor: Actor }) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const docs = await db
+    .select({
+      publicId: approvedDocuments.publicId,
+      title: approvedDocuments.title,
+      version: approvedDocuments.version,
+      docType: approvedDocuments.docType,
+      sourceRef: approvedDocuments.sourceRef,
+      body: approvedDocuments.body,
+      keywords: approvedDocuments.keywords
+    })
+    .from(approvedDocuments)
+    .where(eq(approvedDocuments.active, true))
+    .limit(500);
+
+  const ranked = rankDocuments(input.question, docs);
+  const sources = ranked.map((doc) => ({ title: doc.title, version: doc.version, sourceRef: doc.sourceRef, docType: doc.docType }));
+
+  if (ranked.length === 0) {
+    return {
+      status: "sin_fundamento",
+      recommendation: "No hay base documental aprobada que respalde una respuesta. Continua la ruta humana de protocolo.",
+      sources: [],
+      confidence: 0,
+      missingInformation: ["corpus_documental_aprobado"],
+      warnings: ["La IA no responde sin fuente aprobada (7.3)."],
+      requiresHumanConfirmation: true,
+      feedbackPrompt: "No coincide con el caso"
+    };
+  }
+
+  const top = ranked[0];
+  const maxScore = ranked.reduce((max, doc) => Math.max(max, doc.score), 0);
+  const confidence = Math.max(0, Math.min(1, Math.round((top.score / (maxScore + 3)) * 100) / 100));
+
+  let recommendation = extractiveSnippet(top.body);
+  if (isAiConfigured()) {
+    try {
+      const context = ranked
+        .map((doc, index) => `[Fuente ${index + 1}] ${doc.title} (v${doc.version}, ${doc.sourceRef}):\n${extractiveSnippet(doc.body, 900)}`)
+        .join("\n\n");
+      const synthesized = await callAiGateway([
+        {
+          role: "system",
+          content:
+            "Eres el asistente de protocolos del SINAPVE. Responde SOLO con base en las fuentes provistas y cita [Fuente N]. " +
+            "No inventas normativa. Si las fuentes no bastan, dilo. No determinas culpabilidad ni sanciones."
+        },
+        { role: "user", content: `Pregunta: ${input.question}\n\nFuentes aprobadas:\n${context}` }
+      ]);
+      if (synthesized.trim()) recommendation = synthesized.trim();
+    } catch {
+      // Se conserva el extracto de la fuente como respuesta fundamentada.
+    }
+  }
+
+  await db.insert(auditEvents).values({
+    action: "ai_protocol_assistant.answer",
+    resourceType: "ai_protocol_assistant",
+    resourceId: top.publicId,
+    reason: "grounded_rag_answer",
+    metadata: { actorId: input.actor.id, sources: sources.length, aiSynthesized: isAiConfigured() }
+  });
+
+  return {
+    status: "fundamentado",
+    recommendation,
+    sources,
+    confidence,
+    missingInformation: [],
+    warnings: ["Recomendacion asistida: requiere confirmacion humana antes de actuar."],
+    requiresHumanConfirmation: true,
+    feedbackPrompt: "No coincide con el caso"
+  };
+}
+
+// EP-04/06 / 11.6: procesa la cola durable. Idempotente por diseno: cada handler
+// vuelve a verificar el estado antes de actuar. Invocable desde el Cron.
+export async function processDueJobs(input: { now?: Date; limit?: number }) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const now = input.now ?? new Date();
+  const jobs = await claimDueJobs(now, input.limit ?? 25);
+  const systemActor: Actor = { id: "system:jobs", name: "Durable Jobs", roles: [], scope: {} };
+
+  let processed = 0;
+  let failed = 0;
+  for (const job of jobs) {
+    try {
+      if (job.jobType === "referral_ack_timeout") {
+        const referralPublicId = String(job.payload.referralPublicId ?? "");
+        const [referral] = await db
+          .select({ publicId: referrals.publicId, status: referrals.status })
+          .from(referrals)
+          .where(eq(referrals.publicId, referralPublicId))
+          .limit(1);
+        // Solo escala si sigue sin acuse: idempotencia frente a reentregas.
+        if (referral && referral.status === "pendiente") {
+          await escalateReferral({ referralId: referral.publicId, reason: "acuse_externo_vencido", actor: systemActor });
+        }
+      } else if (job.jobType === "protocol_sla_check") {
+        const casePublicId = String(job.payload.casePublicId ?? "");
+        const caseRow = casePublicId ? await findCaseRow(casePublicId) : null;
+        if (caseRow) {
+          await db.insert(notifications).values({
+            publicId: `ntf_${nanoid(10)}`,
+            caseId: caseRow.id,
+            priority: "accion_requerida",
+            channel: "in_app",
+            safeSummary: "Revision de SLA del protocolo pendiente de verificacion humana."
+          });
+        }
+      }
+      await completeJob(job.id);
+      processed += 1;
+    } catch (error) {
+      await failJob(job, error instanceof Error ? error.message : "job_error", now);
+      failed += 1;
+    }
+  }
+  return { claimed: jobs.length, processed, failed };
 }

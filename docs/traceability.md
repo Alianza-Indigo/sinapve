@@ -40,3 +40,8 @@
 | Permisos efectivos explicables | EP-01 | Como sistema explico cada capacidad por el rol que la otorga | `access-effective.test.ts` |
 | Graficas accesibles con tabla equivalente | EP-13 | Como usuario autorizado veo indicadores certificados en SVG accesible con tabla de datos | `MetricWidgetChart`, backoffice analitica |
 | Indicadores publicos agregados | EP-18 | Como ciudadania consulto cifras agregadas con umbral de privacidad sin registros individuales | `public-indicators.test.ts`, API `/public/indicators`, portal `/transparencia` |
+| Identidad firmada por gateway | EP-01 | Como plataforma verifico la firma HMAC de la identidad para no confiar en encabezados falsificables | `gateway-signature.test.ts` |
+| INRE configurable y versionado | EP-08 | Como analista calculo el indice con pesos versionados, datos faltantes visibles y contribucion por dimension | `inre.test.ts`, API `/risk/inre` |
+| IA supervisada por AI Gateway | EP-09 | Como APVE recibo clasificacion asistida validada contra JSON Schema con confirmacion humana | API `/ai/classifications` |
+| Asistente de protocolos con RAG | EP-09 | Como responsable consulto doctrina aprobada con fuente, version y confianza | `rag.test.ts`, API `/ai/protocol-assistant` |
+| Orquestacion durable portable | EP-04/EP-06 | Como sistema encolo recordatorios y vencimientos de acuse idempotentes y los proceso desde el Cron | Cron `/cron/sla-review`, `durable_jobs` |

@@ -1089,3 +1089,53 @@ export const integrationEvents = pgTable(
     typeIdx: index("integration_events_type_idx").on(table.eventType)
   })
 );
+
+// EP-09 / 7.3: base documental aprobada para el asistente RAG de protocolos.
+// Solo contiene doctrina aprobada (protocolos, manuales, normativa, FAQ), no
+// datos personales. Versionada y con vigencia.
+export const approvedDocuments = pgTable(
+  "approved_documents",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    docType: text("doc_type").notNull(),
+    title: text("title").notNull(),
+    version: integer("version").default(1).notNull(),
+    sourceRef: text("source_ref").notNull(),
+    body: text("body").notNull(),
+    keywords: text("keywords").default("").notNull(),
+    active: boolean("active").default(true).notNull(),
+    effectiveFrom: timestamp("effective_from", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    docTypeIdx: index("approved_documents_doc_type_idx").on(table.docType),
+    activeIdx: index("approved_documents_active_idx").on(table.active)
+  })
+);
+
+// EP-04/06 / 11.6: cola de trabajos durables (patron outbox). Portable a Vercel
+// Queues/Workflows: entrega al menos una vez, consumidores idempotentes por
+// idempotencyKey, reintentos con backoff y bloqueo por lease.
+export const durableJobs = pgTable(
+  "durable_jobs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    jobType: text("job_type").notNull(),
+    idempotencyKey: text("idempotency_key").notNull().unique(),
+    status: text("status").default("pendiente").notNull(),
+    runAt: timestamp("run_at", { withTimezone: true }).defaultNow().notNull(),
+    attempts: integer("attempts").default(0).notNull(),
+    maxAttempts: integer("max_attempts").default(5).notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().default({}).notNull(),
+    lastError: text("last_error"),
+    lockedAt: timestamp("locked_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    statusRunAtIdx: index("durable_jobs_status_run_at_idx").on(table.status, table.runAt),
+    jobTypeIdx: index("durable_jobs_job_type_idx").on(table.jobType)
+  })
+);

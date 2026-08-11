@@ -43,6 +43,13 @@
       "when": 1786420844028,
       "tag": "0005_living_thunderbolts",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786423937622,
+      "tag": "0006_outstanding_quicksilver",
+      "breakpoints": true
     }
   ]
 }

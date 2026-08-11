@@ -1,4 +1,5 @@
-import { sweepOverdueReferrals } from "@/server/data/repository";
+import { processDueJobs, sweepOverdueReferrals } from "@/server/data/repository";
+import { countJobsByStatus } from "@/server/data/jobs";
 import { DatabaseNotConfiguredError } from "@/server/db";
 import type { Actor } from "@/server/domain/types";
 
@@ -21,15 +22,22 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Escalamiento por falta de respuesta externa (6.7). En produccion el
-    // fan-out durable pertenece a Vercel Queues/Workflows; este Cron es el
-    // disparador periodico que marca referencias vencidas.
+    // 1) Drena la cola durable (recordatorios de SLA, vencimientos de acuse).
+    //    Los consumidores son idempotentes. En produccion este drenaje tambien
+    //    puede dispararse desde Vercel Queues/Workflows; el almacen es PostgreSQL
+    //    para no depender de estado en memoria entre invocaciones.
+    const jobs = await processDueJobs({});
+    // 2) Barrido de respaldo: escala referencias vencidas que no tuvieran
+    //    trabajo durable asociado (6.7).
     const referrals = await sweepOverdueReferrals({ actor: cronActor });
+    const queue = await countJobsByStatus();
     return Response.json({
       status: "accepted",
       job: "sla-review",
+      jobs,
       referrals,
-      note: "Barrido de referencias sin acuse ejecutado. La orquestacion durable pertenece a Vercel Queues/Workflows."
+      queue,
+      note: "Cola durable drenada y referencias sin acuse revisadas."
     });
   } catch (error) {
     if (error instanceof DatabaseNotConfiguredError) {

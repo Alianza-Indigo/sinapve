@@ -1,4 +1,5 @@
 import type { Actor, Role } from "../domain/types";
+import { verifyGatewaySignature } from "./gateway-signature";
 
 const validRoles: Role[] = [
   "PUBLIC",
@@ -24,6 +25,11 @@ function parseRoles(value: string | null): Role[] {
 }
 
 export function getActorFromHeaders(headers: Headers): Actor | null {
+  // Cuando el gateway firma la identidad, se rechaza cualquier encabezado sin
+  // firma valida y vigente. Sin clave enlazada, opera el modo desarrollo.
+  const verification = verifyGatewaySignature(headers);
+  if (!verification.valid) return null;
+
   const id = headers.get("x-sinapve-user-id");
   const roles = parseRoles(headers.get("x-sinapve-roles"));
 
