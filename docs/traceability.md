@@ -24,7 +24,6 @@
 | IA supervisada | EP-09 | Como APVE veo recomendaciones como borrador con confirmacion humana obligatoria | `ai-policy.test.ts` |
 | Cero Supabase | Plataforma | Como equipo tecnico evito paquetes y variables prohibidas | `package.test.ts` |
 | Plataforma integral | EP-01..EP-18 | Como usuario autorizado navego todos los modulos del PRD sin datos inventados | `repository.test.ts` |
-| MFA/step-up en privilegios elevados | EP-01 | Como plataforma exijo segundo factor para case:update, protocol:run, audit, privacidad y break-glass | `mfa.test.ts` |
 | Motor SLA y ventanas de vencimiento | EP-04 | Como sistema calculo hitos, estado normal/proximo/vencido y pausas auditables | `sla.test.ts` |
 | Migracion de protocolo activo | EP-04 | Como responsable migro un expediente a una nueva version de protocolo | API `/protocol-runs/{runId}/migrate` |
 | Revision de plan de intervencion | EP-05 | Como APVE reviso resultados y programo la siguiente revision del plan | API `/intervention-plans/{planId}/review` |

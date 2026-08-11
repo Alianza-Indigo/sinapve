@@ -82,5 +82,5 @@ Sobre la base transaccional, la plataforma opera el ciclo de vida completo de ca
 
 ## Seguridad reforzada de servidor
 
-- MFA/step-up: las operaciones elevadas (`case:update`, `protocol:run`, auditoria, privacidad, `technical:operate` y break-glass) exigen el encabezado `x-sinapve-mfa-verified: true` emitido por el gateway de identidad institucional. Sin el, el servidor responde `step_up_required` (401).
+- Segundo factor (MFA): se resuelve en el proveedor de identidad institucional (OIDC/SAML), fuera de la aplicacion. La app NO implementa MFA propio. Ver `docs/adr/0003-mfa-en-proveedor-de-identidad.md`.
 - Mediacion: la elegibilidad se evalua de forma determinista y se bloquea automaticamente ante violencia grave, sexual, coercitiva, autolesiones, delito o asimetria de poder.

@@ -1,6 +1,5 @@
 import { DatabaseNotConfiguredError } from "../db";
 import { FieldEncryptionNotConfiguredError } from "../security/field-crypto";
-import { StepUpRequiredError } from "../domain/mfa";
 
 // Mapeo central de errores de dominio a respuestas HTTP seguras. No expone
 // datos sensibles ni trazas internas (12.1).
@@ -41,12 +40,6 @@ export function mapDomainError(error: unknown): Response | null {
   }
   if (error instanceof FieldEncryptionNotConfiguredError) {
     return Response.json({ error: "field_encryption_not_configured", message: error.message }, { status: 503 });
-  }
-  if (error instanceof StepUpRequiredError) {
-    return Response.json(
-      { error: "step_up_required", message: "Operacion elevada: requiere segundo factor vigente (x-sinapve-mfa-verified)." },
-      { status: 401 }
-    );
   }
   if (error instanceof Error) {
     if (notFoundMessages.has(error.message)) {

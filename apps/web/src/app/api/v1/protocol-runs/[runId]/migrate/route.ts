@@ -2,7 +2,6 @@ import { z } from "zod";
 import { getActorFromHeaders } from "@/server/auth/current-actor";
 import { migrateProtocolRun } from "@/server/data/repository";
 import { hasCapability } from "@/server/domain/access";
-import { assertStepUp } from "@/server/domain/mfa";
 import { mapDomainError } from "@/server/http/errors";
 
 export const runtime = "nodejs";
@@ -24,7 +23,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ run
 
   const { runId } = await params;
   try {
-    assertStepUp(actor, "protocol:run");
     const data = await migrateProtocolRun({ runId, ...parsed.data, actor });
     return Response.json({ data });
   } catch (error) {

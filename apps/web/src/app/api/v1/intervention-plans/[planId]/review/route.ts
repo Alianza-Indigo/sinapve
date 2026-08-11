@@ -2,7 +2,6 @@ import { z } from "zod";
 import { getActorFromHeaders } from "@/server/auth/current-actor";
 import { reviewInterventionPlan } from "@/server/data/repository";
 import { hasCapability } from "@/server/domain/access";
-import { assertStepUp } from "@/server/domain/mfa";
 import { mapDomainError } from "@/server/http/errors";
 
 export const runtime = "nodejs";
@@ -25,7 +24,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ pla
 
   const { planId } = await params;
   try {
-    assertStepUp(actor, "case:update");
     const data = await reviewInterventionPlan({ planId, ...parsed.data, actor });
     return Response.json({ data });
   } catch (error) {

@@ -39,9 +39,6 @@ export type Actor = {
   name: string;
   roles: Role[];
   scope: Scope;
-  // Afirmacion de segundo factor vigente para la sesion, emitida por el gateway
-  // de identidad institucional. Requerida para privilegios elevados (EP-01).
-  mfaVerified?: boolean;
 };
 
 export type Organization = {

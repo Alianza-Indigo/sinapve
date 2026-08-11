@@ -3,7 +3,6 @@ import { getActorFromHeaders } from "@/server/auth/current-actor";
 import { createBreakGlassGrant } from "@/server/data/repository";
 import { DatabaseNotConfiguredError } from "@/server/db";
 import { hasCapability } from "@/server/domain/access";
-import { assertStepUp, StepUpRequiredError } from "@/server/domain/mfa";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,18 +21,6 @@ export async function POST(request: Request) {
   }
   if (!hasCapability(actor, "case:read") && !hasCapability(actor, "audit:read") && !hasCapability(actor, "privacy:read")) {
     return Response.json({ error: "forbidden" }, { status: 403 });
-  }
-  // Break-glass exige segundo factor vigente (3.2, 12.1).
-  try {
-    assertStepUp(actor, "break_glass");
-  } catch (error) {
-    if (error instanceof StepUpRequiredError) {
-      return Response.json(
-        { error: "step_up_required", message: "El acceso break-glass exige segundo factor vigente (encabezado x-sinapve-mfa-verified)." },
-        { status: 401 }
-      );
-    }
-    throw error;
   }
 
   const body = await request.json().catch(() => null);

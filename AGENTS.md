@@ -37,7 +37,7 @@ SINAPVE es una plataforma de proteccion escolar. Cada cambio debe priorizar segu
 - Registrar busquedas, accesos y mutaciones sensibles como eventos de auditoria append-only.
 - No cargar datos inventados en desarrollo, preview ni produccion.
 - No exponer datos sensibles en notificaciones, URLs, logs o errores.
-- Toda excepcion break-glass requiere motivo, duracion, MFA y auditoria reforzada.
+- Toda excepcion break-glass requiere motivo, duracion, alerta a privacidad y auditoria reforzada. El segundo factor (MFA) lo aplica el proveedor de identidad/gateway, no la app (ver `docs/adr/0003-mfa-en-proveedor-de-identidad.md`); no reintroducir MFA en el codigo.
 
 ## Definition of Done
 
