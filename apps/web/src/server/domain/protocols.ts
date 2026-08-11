@@ -22,7 +22,7 @@ export function createProtocolRun(caseId: string, severity: Severity): ProtocolR
     caseId,
     protocolCode: severity === "critica" ? "critical_response_v1" : "school_protection_v1",
     version: 1,
-    startedAt: "2026-08-10T18:30:00Z",
+    startedAt: new Date().toISOString(),
     humanOwner: "APVE asignado",
     steps: baseSteps.map((step, index) => ({
       ...step,

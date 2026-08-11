@@ -12,7 +12,7 @@ export function KpiCard({ widget }: { widget: MetricWidget }) {
       <div className="bar" aria-label={`Avance ${percent}%`}>
         <span style={{ width: `${percent}%` }} />
       </div>
-      <p className="muted">Calidad {widget.quality}% · Supresiones {widget.privacySuppressedCells}</p>
+      <p className="muted">Calidad {widget.quality}% / Supresiones {widget.privacySuppressedCells}</p>
     </article>
   );
 }

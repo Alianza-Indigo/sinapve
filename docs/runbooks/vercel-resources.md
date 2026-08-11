@@ -1,39 +1,26 @@
 # Runbook: recursos Vercel
 
-## Marketplace
+## Recursos enlazados
 
-Provisionar en este orden:
+El proyecto asume que la base administrada y el almacenamiento privado ya existen en Vercel.
 
-1. Neon Postgres.
-2. Upstash Redis.
-3. Vercel Blob con almacenamiento privado.
-4. Vercel Workflows y Queues.
-
-Despues de vincular el proyecto:
+Despues de enlazar el proyecto:
 
 ```bash
 vercel link
 vercel env pull .env.local --yes
-npm run db:generate
-npm run db:seed
+corepack pnpm db:generate
 ```
 
 ## Politicas
 
 - Preview, Staging y Production usan recursos y secretos aislados.
-- Los previews solo deben usar datos sinteticos.
+- La plataforma no carga expedientes, reportes ni metricas inventadas.
 - `CRON_SECRET` debe validarse en cada endpoint Cron.
 - Las migraciones destructivas siguen expand/migrate/contract.
 - Los adjuntos de expediente solo se consultan desde servidor con permiso vigente.
 
-## Blob privado
-
-Crear un store privado desde dashboard o CLI:
-
-```bash
-vercel blob create-store sinapve-evidence --access private
-vercel env pull .env.local --yes
-```
+## Evidencia privada
 
 La aplicacion usa:
 
@@ -41,4 +28,4 @@ La aplicacion usa:
 - `GET /api/v1/cases/{caseId}/evidence?pathname=...` para servirla despues de validar permiso del expediente.
 - `Cache-Control: private, no-cache` y `X-Content-Type-Options: nosniff` en la entrega.
 
-No devolver URLs `*.private.blob.vercel-storage.com` al cliente como mecanismo de acceso. La URL de Blob queda tratada como dato interno del servidor.
+No devolver URLs privadas del almacenamiento al cliente como mecanismo de acceso. La URL queda tratada como dato interno del servidor.

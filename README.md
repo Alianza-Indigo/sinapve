@@ -2,48 +2,47 @@
 
 Plataforma Nacional del Sistema Nacional del Agente Preventivo de Violencia Escolar.
 
-Esta primera entrega crea las fundaciones tecnicas del PRD:
+Esta entrega deja una base operativa alineada al PRD:
 
-- Monorepo compatible con pnpm/Turborepo.
+- Monorepo con pnpm/Turborepo.
 - Next.js App Router con TypeScript, preparado para Vercel.
 - Cero dependencias de Supabase.
-- Drizzle ORM para Neon PostgreSQL serverless.
+- Drizzle ORM sobre Neon PostgreSQL serverless.
+- Vercel Blob privado para evidencia sensible.
 - Modelo inicial de organizaciones, reportes, casos, protocolos, metricas y auditoria.
-- Portal publico de ayuda, backoffice sintetico, expediente, protocolo y tablero analitico.
+- Portal publico de ayuda, backoffice, expediente, protocolo y tablero analitico.
 - APIs REST versionadas en `/api/v1`.
-- Documentacion ADR, OpenAPI inicial, trazabilidad y runbook de servicios Vercel.
+- Cron diario para revision SLA.
+- RBAC + ABAC de servidor mediante identidad institucional verificada por headers.
 
 ## Desarrollo local
 
 ```bash
-npm install
-npm run dev
+corepack pnpm install
+corepack pnpm dev
 ```
 
-La app vive en `apps/web` y usa datos sinteticos cuando `DATABASE_URL` no esta configurado.
+La app vive en `apps/web`. Si la variable de la base existente no esta enlazada, las vistas muestran estados vacios y las APIs transaccionales responden `database_not_configured`; no se cargan datos de ejemplo.
 
 ## Validacion
 
 ```bash
-npm run typecheck
-npm test
-npm run build
+corepack pnpm typecheck
+corepack pnpm test
+corepack pnpm build
 ```
 
-## Servicios requeridos en Vercel
+## Configuracion
 
-Provisionar por Vercel Marketplace:
+El proyecto espera que Vercel ya tenga enlazados los recursos administrados de base de datos y archivos privados. La unica variable manual del repositorio es:
 
-- Neon Postgres.
-- Vercel Blob privado.
-- Upstash Redis.
-- Vercel Workflows y Queues para SLA, fan-out y notificaciones.
+- `CRON_SECRET`
 
-Las variables viven en `.env.example`. No se deben agregar variables ni paquetes de Supabase.
+No se deben agregar variables ni paquetes de Supabase.
 
 ## Evidencia privada
 
-La ruta `POST /api/v1/cases/{caseId}/evidence` sube archivos permitidos a Vercel Blob con `access: "private"`.
+La ruta `POST /api/v1/cases/{caseId}/evidence` sube archivos permitidos al almacenamiento privado con `access: "private"`.
 La lectura pasa por `GET /api/v1/cases/{caseId}/evidence?pathname=...`, donde se valida el alcance del expediente antes de llamar `get()` al store privado.
 
-En local sin `BLOB_READ_WRITE_TOKEN`, esas rutas responden `private_blob_not_configured` para evitar simulaciones inseguras.
+En local sin el token del almacenamiento privado enlazado, esas rutas responden `private_blob_not_configured`.

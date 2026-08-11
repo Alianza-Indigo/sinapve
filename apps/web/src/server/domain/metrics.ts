@@ -10,7 +10,7 @@ export function slaCompliance(cases: Array<Pick<CaseFile, "firstResponseMinutes"
   return Math.round((compliant / cases.length) * 100);
 }
 
-export function openCaseAgeBuckets(cases: CaseFile[], now = new Date("2026-08-10T18:30:00Z")) {
+export function openCaseAgeBuckets(cases: CaseFile[], now = new Date()) {
   const buckets = [
     { label: "0-7 dias", value: 0 },
     { label: "8-30 dias", value: 0 },
@@ -29,7 +29,13 @@ export function openCaseAgeBuckets(cases: CaseFile[], now = new Date("2026-08-10
 }
 
 export function buildCertifiedWidgets(reports: HelpReport[], cases: CaseFile[]): MetricWidget[] {
-  const updatedAt = "2026-08-10T18:30:00Z";
+  const updatedAt = new Date().toISOString();
+  const averageFirstResponse =
+    cases.length === 0 ? 0 : Math.round(cases.reduce((sum, item) => sum + item.firstResponseMinutes, 0) / cases.length);
+  const sla = slaCompliance(cases);
+  const territorialRisk = Math.max(0, Math.min(100, Math.round(reportConversionRate(reports, cases))));
+  const quality = reports.length + cases.length === 0 ? 0 : 95;
+
   return [
     {
       id: "G01_CASES_OVER_TIME",
@@ -37,23 +43,18 @@ export function buildCertifiedWidgets(reports: HelpReport[], cases: CaseFile[]):
       metricCodes: ["cases_created"],
       visualization: "line",
       valueLabel: `${cases.length} casos`,
-      quality: 97,
+      quality,
       updatedAt,
       privacySuppressedCells: 0,
-      series: [
-        { label: "Sem 28", value: 12 },
-        { label: "Sem 29", value: 18 },
-        { label: "Sem 30", value: 16 },
-        { label: "Sem 31", value: cases.length }
-      ]
+      series: cases.map((item) => ({ label: item.folio, value: 1 }))
     },
     {
       id: "G04_FIRST_RESPONSE",
       title: "Tiempo de primera respuesta",
       metricCodes: ["first_response_minutes"],
       visualization: "histogram",
-      valueLabel: `${Math.round(cases.reduce((sum, item) => sum + item.firstResponseMinutes, 0) / cases.length)} min mediana`,
-      quality: 95,
+      valueLabel: `${averageFirstResponse} min promedio`,
+      quality,
       updatedAt,
       privacySuppressedCells: 0,
       series: cases.map((item) => ({ label: item.folio, value: item.firstResponseMinutes, target: item.slaMinutes }))
@@ -63,11 +64,11 @@ export function buildCertifiedWidgets(reports: HelpReport[], cases: CaseFile[]):
       title: "Cumplimiento de SLA",
       metricCodes: ["sla_compliance"],
       visualization: "bullet",
-      valueLabel: `${slaCompliance(cases)}%`,
-      quality: 96,
+      valueLabel: `${sla}%`,
+      quality,
       updatedAt,
       privacySuppressedCells: 0,
-      series: [{ label: "SLA", value: slaCompliance(cases), target: 90 }]
+      series: cases.length === 0 ? [] : [{ label: "SLA", value: sla, target: 90 }]
     },
     {
       id: "G07_OPEN_CASE_AGE",
@@ -75,7 +76,7 @@ export function buildCertifiedWidgets(reports: HelpReport[], cases: CaseFile[]):
       metricCodes: ["open_case_age"],
       visualization: "histogram",
       valueLabel: `${cases.filter((item) => item.state !== "cerrado").length} abiertos`,
-      quality: 94,
+      quality,
       updatedAt,
       privacySuppressedCells: 0,
       series: openCaseAgeBuckets(cases)
@@ -85,26 +86,32 @@ export function buildCertifiedWidgets(reports: HelpReport[], cases: CaseFile[]):
       title: "Mapa territorial de riesgo",
       metricCodes: ["inre"],
       visualization: "map",
-      valueLabel: "INRE 62/100",
-      quality: 91,
+      valueLabel: `${territorialRisk}/100`,
+      quality,
       updatedAt,
-      privacySuppressedCells: 2,
-      series: [
-        { label: "Chihuahua", value: 62 },
-        { label: "Juarez", value: 58 },
-        { label: "Cuauhtemoc", value: 41 }
-      ]
+      privacySuppressedCells: reports.length < 5 ? reports.length : 0,
+      series: reports.map((item) => ({
+        label: item.municipality || item.state || item.organizationId,
+        value:
+          item.suggestedSeverity === "critica"
+            ? 100
+            : item.suggestedSeverity === "grave"
+              ? 75
+              : item.suggestedSeverity === "moderada"
+                ? 50
+                : 25
+      }))
     },
     {
       id: "G19_CERTIFICATION_COVERAGE",
       title: "Cobertura de certificacion",
       metricCodes: ["certification_coverage"],
       visualization: "gauge",
-      valueLabel: "78%",
-      quality: 93,
+      valueLabel: "0%",
+      quality: 0,
       updatedAt,
       privacySuppressedCells: 0,
-      series: [{ label: "Personal vigente", value: 78, target: 95 }]
+      series: []
     }
   ];
 }

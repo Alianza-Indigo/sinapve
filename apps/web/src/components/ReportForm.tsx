@@ -67,6 +67,11 @@ export function ReportForm() {
       </div>
 
       <div className="field">
+        <label htmlFor="organizationPublicId">ID publico del plantel</label>
+        <input id="organizationPublicId" name="organizationPublicId" placeholder="Ej. SEP-CHH-CUU-0001" required />
+      </div>
+
+      <div className="field">
         <label htmlFor="schoolName">Plantel o ubicacion</label>
         <input id="schoolName" name="schoolName" placeholder="Ej. Secundaria Norte" required />
       </div>

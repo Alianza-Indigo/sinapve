@@ -2,13 +2,8 @@ import Link from "next/link";
 import { ArrowRight, BarChart3, LockKeyhole, ShieldAlert } from "lucide-react";
 import { Topbar } from "@/components/Topbar";
 import { ReportForm } from "@/components/ReportForm";
-import { buildCertifiedWidgets } from "@/server/domain/metrics";
-import { cases, reports } from "@/server/data/demo";
-import { KpiCard } from "@/components/KpiCard";
 
 export default function HomePage() {
-  const widgets = buildCertifiedWidgets(reports, cases).slice(0, 3);
-
   return (
     <div className="page-shell">
       <a className="skip-link" href="#main">Saltar al contenido</a>
@@ -26,7 +21,7 @@ export default function HomePage() {
           </a>
           <Link className="button" href="/backoffice">
             <BarChart3 size={18} aria-hidden="true" />
-            Ver operacion sintetica
+            Ver operacion
           </Link>
         </div>
       </section>
@@ -46,17 +41,13 @@ export default function HomePage() {
             </p>
             <p className="status-pill safe">
               <LockKeyhole size={16} aria-hidden="true" />
-              Sin Supabase · Datos sinteticos locales
+              Sin Supabase · Datos reales en Neon
             </p>
           </section>
           <section className="panel">
-            <p className="eyebrow">Primer tablero</p>
-            <h2>Metricas certificadas</h2>
-            <div className="kpi-grid" style={{ gridTemplateColumns: "1fr" }}>
-              {widgets.map((widget) => (
-                <KpiCard key={widget.id} widget={widget} />
-              ))}
-            </div>
+            <p className="eyebrow">Datos reales</p>
+            <h2>Operacion conectada</h2>
+            <p>Los reportes se guardan en Neon y la evidencia sensible en Blob privado. Si el catalogo territorial no existe, la app no inventa planteles.</p>
             <Link className="button" href="/backoffice">
               Abrir tablero <ArrowRight size={18} aria-hidden="true" />
             </Link>

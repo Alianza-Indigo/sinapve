@@ -1,7 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { demoActor } from "../data/demo";
 import { canReadCase, hasCapability } from "./access";
-import type { CaseFile } from "./types";
+import type { Actor, CaseFile } from "./types";
+
+const actor: Actor = {
+  id: "user_001",
+  name: "APVE fixture",
+  roles: ["APVE"],
+  scope: {
+    organizationId: "org_secundaria_norte",
+    stateCode: "CHH",
+    assignedCaseIds: ["case_001"]
+  },
+  mfaVerified: true
+};
 
 describe("RBAC + ABAC", () => {
   it("allows APVE to read assigned cases within scope", () => {
@@ -21,12 +32,12 @@ describe("RBAC + ABAC", () => {
       timeline: []
     };
 
-    expect(hasCapability(demoActor, "case:read")).toBe(true);
-    expect(canReadCase(demoActor, caseFile)).toBe(true);
+    expect(hasCapability(actor, "case:read")).toBe(true);
+    expect(canReadCase(actor, caseFile)).toBe(true);
   });
 
   it("denies highly sensitive access when MFA is not verified", () => {
-    const actor = { ...demoActor, mfaVerified: false };
+    const actorWithoutMfa = { ...actor, mfaVerified: false };
     const caseFile: CaseFile = {
       id: "case_001",
       folio: "CASO",
@@ -43,6 +54,6 @@ describe("RBAC + ABAC", () => {
       timeline: []
     };
 
-    expect(canReadCase(actor, caseFile, "altamente_sensible")).toBe(false);
+    expect(canReadCase(actorWithoutMfa, caseFile, "altamente_sensible")).toBe(false);
   });
 });

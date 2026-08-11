@@ -1,14 +1,45 @@
 import Link from "next/link";
-import { Activity, BrainCircuit, FileText, Map, ShieldCheck } from "lucide-react";
+import { headers } from "next/headers";
+import { Activity, BrainCircuit, FileText, Lock, Map, ShieldCheck } from "lucide-react";
 import { Topbar } from "@/components/Topbar";
 import { KpiCard } from "@/components/KpiCard";
 import { ReportQueue } from "@/components/ReportQueue";
-import { cases, demoActor, reports } from "@/server/data/demo";
-import { explainAccess } from "@/server/domain/access";
+import { getActorFromHeaders } from "@/server/auth/current-actor";
+import { getLiveDataStatus, listCases, listReports } from "@/server/data/repository";
+import { canReadCase, canReadReport, hasCapability } from "@/server/domain/access";
 import { buildCertifiedWidgets } from "@/server/domain/metrics";
 
-export default function BackofficePage() {
+export const dynamic = "force-dynamic";
+
+export default async function BackofficePage() {
+  const actor = getActorFromHeaders(await headers());
+  if (!actor || !hasCapability(actor, "analytics:read")) {
+    return (
+      <div className="page-shell">
+        <Topbar />
+        <main className="section">
+          <section className="panel">
+            <p className="eyebrow">Acceso requerido</p>
+            <h1 style={{ fontSize: "clamp(2rem, 5vw, 3.2rem)" }}>Centro de proteccion escolar</h1>
+            <p className="lead">La consola requiere identidad institucional verificada y permiso de analitica.</p>
+            <div className="status-row">
+              <span className="status-pill critical">
+                <Lock size={16} aria-hidden="true" />
+                Sin permiso efectivo
+              </span>
+            </div>
+          </section>
+        </main>
+      </div>
+    );
+  }
+
+  const [allReports, allCases, liveStatus] = await Promise.all([listReports(), listCases(), getLiveDataStatus()]);
+  const reports = allReports.filter((report) => canReadReport(actor, report));
+  const cases = allCases.filter((caseFile) => canReadCase(actor, caseFile));
   const widgets = buildCertifiedWidgets(reports, cases);
+  const territorialWidget = widgets.find((widget) => widget.id === "G10_TERRITORIAL_RISK");
+  const firstCase = cases[0];
 
   return (
     <div className="page-shell">
@@ -16,14 +47,20 @@ export default function BackofficePage() {
       <main className="section">
         <div className="toolbar" style={{ justifyContent: "space-between" }}>
           <div>
-            <p className="eyebrow">Backoffice sintetico</p>
+            <p className="eyebrow">Backoffice</p>
             <h1 style={{ fontSize: "clamp(2rem, 5vw, 3.4rem)" }}>Centro de proteccion escolar</h1>
-            <p className="lead">{explainAccess(demoActor, "analytics")}</p>
+            <p className="lead">
+              {liveStatus.databaseConfigured
+                ? `Conectado a Neon: ${liveStatus.reports} reportes y ${liveStatus.cases} expedientes visibles.`
+                : "Neon no esta configurado. La plataforma no muestra datos inventados."}
+            </p>
           </div>
-          <Link className="button primary" href="/backoffice/cases/case_001">
-            <FileText size={18} aria-hidden="true" />
-            Abrir expediente
-          </Link>
+          {firstCase ? (
+            <Link className="button primary" href={`/backoffice/cases/${firstCase.id}`}>
+              <FileText size={18} aria-hidden="true" />
+              Abrir expediente
+            </Link>
+          ) : null}
         </div>
 
         <section className="widget-grid" aria-label="Indicadores certificados">
@@ -42,15 +79,22 @@ export default function BackofficePage() {
             <section className="panel">
               <p className="eyebrow">Riesgo territorial</p>
               <h2>INRE explicable</h2>
-              <div className="map-visual" role="img" aria-label="Mapa sintetico de riesgo por zonas con privacidad aplicada">
-                <span className="map-cell">41</span>
-                <span className="map-cell">58</span>
-                <span className="map-cell">36</span>
-                <span className="map-cell">49</span>
-                <span className="map-cell">62</span>
-                <span className="map-cell">44</span>
+              <div className="map-visual" role="img" aria-label="Mapa territorial con privacidad aplicada">
+                {territorialWidget?.series.length ? (
+                  territorialWidget.series.slice(0, 6).map((cell) => (
+                    <span className="map-cell" key={cell.label}>
+                      {cell.value}
+                    </span>
+                  ))
+                ) : (
+                  <span className="map-cell">0</span>
+                )}
               </div>
-              <p className="muted">Celdas pequenas suprimidas antes de llegar al navegador.</p>
+              <p className="muted">
+                {territorialWidget?.series.length
+                  ? "Celdas pequenas se suprimen antes de llegar al navegador."
+                  : "Sin reportes territoriales en Neon."}
+              </p>
             </section>
             <section className="panel">
               <p className="eyebrow">IA supervisada</p>

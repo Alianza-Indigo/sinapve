@@ -9,9 +9,9 @@ SINAPVE es una plataforma de proteccion escolar. Cada cambio debe priorizar segu
 - Stack principal: Next.js App Router, React, TypeScript, Vercel.
 - Datos transaccionales: Neon PostgreSQL mediante Drizzle ORM.
 - Objetos sensibles: Vercel Blob privado, nunca filesystem efimero.
-- Cache y rate limiting: Upstash Redis.
-- Procesos durables: Vercel Workflows.
-- Eventos asincronos: Vercel Queues.
+- Cache y rate limiting: pendiente de proveedor administrado en Vercel.
+- Procesos durables: Vercel Workflows cuando se active orquestacion avanzada.
+- Eventos asincronos: Vercel Queues cuando se active fan-out.
 - APIs: REST/JSON versionadas bajo `/api/v1`.
 - Runtime servidor: Node.js para datos, cifrado, PDF, integraciones y logica de dominio.
 - No usar Supabase, paquetes `@supabase/*`, variables `SUPABASE_*`, Firebase como reemplazo silencioso ni almacenamiento local persistente.
@@ -35,7 +35,7 @@ SINAPVE es una plataforma de proteccion escolar. Cada cambio debe priorizar segu
 - Validar permisos en servidor; ocultar UI no cuenta como control.
 - Aplicar RBAC + ABAC para rol, adscripcion, alcance, sensibilidad y vigencia.
 - Registrar busquedas, accesos y mutaciones sensibles como eventos de auditoria append-only.
-- Mantener datos sinteticos en desarrollo.
+- No cargar datos inventados en desarrollo, preview ni produccion.
 - No exponer datos sensibles en notificaciones, URLs, logs o errores.
 - Toda excepcion break-glass requiere motivo, duracion, MFA y auditoria reforzada.
 

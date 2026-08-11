@@ -14,6 +14,6 @@ Construir un monorepo con una aplicacion principal `apps/web` y limites de domin
 
 ## Consecuencias
 
-- La entrega inicial funciona con datos sinteticos sin bloquearse por recursos externos.
+- La entrega inicial no inventa datos: sin Neon muestra estados vacios o errores de configuracion explicitos.
 - La ruta de produccion queda preparada para Vercel Marketplace.
 - Cualquier proveedor alterno debe preservar compatibilidad serverless y documentarse en un nuevo ADR.

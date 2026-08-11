@@ -1,19 +1,76 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Clock, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Clock, Lock, ShieldCheck } from "lucide-react";
 import { Topbar } from "@/components/Topbar";
 import { CaseTimeline } from "@/components/CaseTimeline";
 import { ProtocolStepper } from "@/components/ProtocolStepper";
-import { demoActor } from "@/server/data/demo";
+import { getActorFromHeaders } from "@/server/auth/current-actor";
 import { getCase } from "@/server/data/repository";
+import { DatabaseNotConfiguredError } from "@/server/db";
 import { canReadCase, explainAccess } from "@/server/domain/access";
 import { createProtocolRun } from "@/server/domain/protocols";
 
 export default async function CasePage({ params }: { params: Promise<{ caseId: string }> }) {
   const { caseId } = await params;
-  const caseFile = await getCase(caseId);
+  const actor = getActorFromHeaders(await headers());
+  if (!actor) {
+    return (
+      <div className="page-shell">
+        <Topbar />
+        <main className="section">
+          <Link className="button" href="/backoffice">
+            <ArrowLeft size={18} aria-hidden="true" />
+            Regresar
+          </Link>
+          <section className="panel" style={{ marginTop: "1rem" }}>
+            <p className="eyebrow">Acceso requerido</p>
+            <h1 style={{ fontSize: "clamp(2rem, 5vw, 3rem)" }}>Falta identidad institucional</h1>
+            <p className="lead">
+              Para abrir expedientes el gateway de identidad debe enviar encabezados verificados de usuario, roles,
+              alcance territorial y MFA. No se usa un actor de prueba.
+            </p>
+            <div className="status-row">
+              <span className="status-pill critical">
+                <Lock size={16} aria-hidden="true" />
+                Sin sesion verificada
+              </span>
+            </div>
+          </section>
+        </main>
+      </div>
+    );
+  }
+
+  let caseFile;
+  try {
+    caseFile = await getCase(caseId);
+  } catch (error) {
+    if (error instanceof DatabaseNotConfiguredError) {
+      return (
+        <div className="page-shell">
+          <Topbar />
+          <main className="section">
+            <Link className="button" href="/backoffice">
+              <ArrowLeft size={18} aria-hidden="true" />
+              Regresar
+            </Link>
+            <section className="panel" style={{ marginTop: "1rem" }}>
+              <p className="eyebrow">Neon requerido</p>
+              <h1 style={{ fontSize: "clamp(2rem, 5vw, 3rem)" }}>Base de datos no configurada</h1>
+              <p className="lead">
+                Vincula la variable de la base existente para consultar expedientes reales. Esta vista no muestra datos de ejemplo.
+              </p>
+            </section>
+          </main>
+        </div>
+      );
+    }
+    throw error;
+  }
+
   if (!caseFile) notFound();
-  if (!canReadCase(demoActor, caseFile)) notFound();
+  if (!canReadCase(actor, caseFile)) notFound();
 
   const protocolRun = createProtocolRun(caseFile.id, caseFile.severity);
 
@@ -54,7 +111,7 @@ export default async function CasePage({ params }: { params: Promise<{ caseId: s
             <section className="panel">
               <p className="eyebrow">Permiso efectivo</p>
               <h2>Acceso explicado</h2>
-              <p>{explainAccess(demoActor, "case")}</p>
+              <p>{explainAccess(actor, "case")}</p>
             </section>
             <section className="panel">
               <p className="eyebrow">Protocolo</p>

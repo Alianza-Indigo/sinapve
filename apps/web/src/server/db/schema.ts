@@ -38,8 +38,12 @@ export const users = pgTable("users", {
 
 export const userAssignments = pgTable("user_assignments", {
   id: uuid("id").defaultRandom().primaryKey(),
-  userId: uuid("user_id").notNull(),
-  organizationId: uuid("organization_id").notNull(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
   role: text("role").notNull(),
   startsAt: timestamp("starts_at", { withTimezone: true }).defaultNow().notNull(),
   endsAt: timestamp("ends_at", { withTimezone: true })
@@ -53,7 +57,9 @@ export const reports = pgTable(
     folio: text("folio").notNull().unique(),
     mode: reportMode("mode").$type<ReportMode>().notNull(),
     reporterType: text("reporter_type").notNull(),
-    organizationId: uuid("organization_id").notNull(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
     descriptionCiphertext: text("description_ciphertext").notNull(),
     safetyNow: text("safety_now").notNull(),
     status: reportStatus("status").default("recibido").notNull(),
@@ -73,12 +79,16 @@ export const cases = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     publicId: text("public_id").notNull().unique(),
     folio: text("folio").notNull().unique(),
-    reportId: uuid("report_id").notNull(),
-    organizationId: uuid("organization_id").notNull(),
+    reportId: uuid("report_id")
+      .notNull()
+      .references(() => reports.id),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
     title: text("title").notNull(),
     state: caseState("state").$type<CaseState>().default("nuevo").notNull(),
     severity: severity("severity").$type<Severity>().notNull(),
-    assignedUserId: uuid("assigned_user_id"),
+    assignedUserId: uuid("assigned_user_id").references(() => users.id),
     protectionSummaryCiphertext: text("protection_summary_ciphertext"),
     firstResponseMinutes: integer("first_response_minutes"),
     slaMinutes: integer("sla_minutes").notNull(),
@@ -93,8 +103,10 @@ export const cases = pgTable(
 
 export const caseEvents = pgTable("case_events", {
   id: uuid("id").defaultRandom().primaryKey(),
-  caseId: uuid("case_id").notNull(),
-  actorUserId: uuid("actor_user_id"),
+  caseId: uuid("case_id")
+    .notNull()
+    .references(() => cases.id),
+  actorUserId: uuid("actor_user_id").references(() => users.id),
   title: text("title").notNull(),
   bodyCiphertext: text("body_ciphertext").notNull(),
   eventType: text("event_type").notNull(),
@@ -113,8 +125,12 @@ export const protocolVersions = pgTable("protocol_versions", {
 
 export const protocolRuns = pgTable("protocol_runs", {
   id: uuid("id").defaultRandom().primaryKey(),
-  caseId: uuid("case_id").notNull(),
-  protocolVersionId: uuid("protocol_version_id").notNull(),
+  caseId: uuid("case_id")
+    .notNull()
+    .references(() => cases.id),
+  protocolVersionId: uuid("protocol_version_id")
+    .notNull()
+    .references(() => protocolVersions.id),
   workflowRunId: text("workflow_run_id"),
   status: text("status").default("activo").notNull(),
   startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull()
@@ -133,7 +149,7 @@ export const auditEvents = pgTable(
   "audit_events",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    actorUserId: uuid("actor_user_id"),
+    actorUserId: uuid("actor_user_id").references(() => users.id),
     action: text("action").notNull(),
     resourceType: text("resource_type").notNull(),
     resourceId: text("resource_id").notNull(),

@@ -4,20 +4,57 @@ info:
   version: 0.1.0
 servers:
   - url: /api/v1
+components:
+  securitySchemes:
+    SinapveInstitutionalHeaders:
+      type: apiKey
+      in: header
+      name: x-sinapve-user-id
 paths:
   /reports:
     post:
       summary: Create a public report or help request.
       operationId: createReport
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mode, reporterType, organizationPublicId, schoolName, safetyNow, description]
+              properties:
+                mode:
+                  type: string
+                  enum: [anonimo, confidencial, identificado]
+                reporterType:
+                  type: string
+                  enum: [estudiante, familia, personal, comunidad]
+                organizationPublicId:
+                  type: string
+                schoolName:
+                  type: string
+                safetyNow:
+                  type: string
+                  enum: [segura, riesgo, emergencia]
+                description:
+                  type: string
       responses:
         "201":
           description: Report created with opaque folio.
+        "422":
+          description: School organization is not present in the territorial catalog.
+        "503":
+          description: Live database environment is not linked.
     get:
       summary: List reports visible to the current server-side scope.
       operationId: listReports
+      security:
+        - SinapveInstitutionalHeaders: []
       responses:
         "200":
           description: Report queue.
+        "401":
+          description: Missing verified institutional headers.
   /reports/{reportId}/status:
     get:
       summary: Read safe public tracking status.
@@ -31,10 +68,14 @@ paths:
       responses:
         "200":
           description: Safe status without sensitive details.
+        "503":
+          description: Live database environment is not linked.
   /cases/{caseId}:
     get:
       summary: Read an authorized case file.
       operationId: getCase
+      security:
+        - SinapveInstitutionalHeaders: []
       parameters:
         - name: caseId
           in: path
@@ -44,10 +85,18 @@ paths:
       responses:
         "200":
           description: Case file with timeline and protocol state.
+        "401":
+          description: Missing verified institutional headers.
+        "403":
+          description: User scope cannot access this case.
+        "503":
+          description: Live database environment is not linked.
   /cases/{caseId}/evidence:
     post:
       summary: Upload authorized evidence to private Vercel Blob storage.
       operationId: uploadCaseEvidence
+      security:
+        - SinapveInstitutionalHeaders: []
       requestBody:
         required: true
         content:
@@ -62,11 +111,17 @@ paths:
       responses:
         "201":
           description: Private evidence blob metadata and server delivery path.
+        "401":
+          description: Missing verified institutional headers.
+        "403":
+          description: User scope cannot update this case evidence.
         "503":
-          description: Private Blob store is not configured.
+          description: Required live environment is not linked.
     get:
       summary: Stream an authorized private evidence blob through a server function.
       operationId: readCaseEvidence
+      security:
+        - SinapveInstitutionalHeaders: []
       parameters:
         - name: caseId
           in: path
@@ -85,17 +140,33 @@ paths:
           description: Evidence blob not modified for the supplied ETag.
         "403":
           description: User scope cannot access this case evidence.
+        "503":
+          description: Required live environment is not linked.
   /cases/{caseId}/protocol-runs:
     post:
       summary: Start a protocol run for a case.
       operationId: startProtocolRun
+      security:
+        - SinapveInstitutionalHeaders: []
       responses:
         "202":
           description: Protocol run accepted.
+        "401":
+          description: Missing verified institutional headers.
+        "403":
+          description: User scope cannot run protocols for this case.
+        "503":
+          description: Live database environment is not linked.
   /dashboards/{dashboardId}:
     get:
       summary: Read an authorized analytics dashboard.
       operationId: getDashboard
+      security:
+        - SinapveInstitutionalHeaders: []
       responses:
         "200":
           description: Certified widgets and data series.
+        "401":
+          description: Missing verified institutional headers.
+        "403":
+          description: User role cannot read analytics.

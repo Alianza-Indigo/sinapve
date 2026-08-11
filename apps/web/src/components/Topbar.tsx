@@ -14,7 +14,6 @@ export function Topbar() {
       <nav className="nav" aria-label="Navegacion principal">
         <Link href="/">Ayuda</Link>
         <Link href="/backoffice">Backoffice</Link>
-        <Link href="/backoffice/cases/case_001">Expediente</Link>
       </nav>
       <SensoryModeToggle />
     </header>

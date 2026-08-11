@@ -4,7 +4,11 @@ export async function GET(request: Request) {
   const configuredSecret = process.env.CRON_SECRET;
   const receivedSecret = request.headers.get("authorization")?.replace("Bearer ", "");
 
-  if (configuredSecret && receivedSecret !== configuredSecret) {
+  if (!configuredSecret) {
+    return Response.json({ error: "cron_secret_not_configured" }, { status: 503 });
+  }
+
+  if (receivedSecret !== configuredSecret) {
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
 

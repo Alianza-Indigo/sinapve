@@ -4,7 +4,7 @@ export function ReportQueue({ reports }: { reports: HelpReport[] }) {
   return (
     <div className="table-wrap">
       <table>
-        <caption className="muted">Cola visible para el alcance institucional sintetico.</caption>
+        <caption className="muted">Cola visible desde datos reales autorizados.</caption>
         <thead>
           <tr>
             <th>Folio</th>
@@ -15,15 +15,21 @@ export function ReportQueue({ reports }: { reports: HelpReport[] }) {
           </tr>
         </thead>
         <tbody>
-          {reports.map((report) => (
-            <tr key={report.id}>
-              <td>{report.folio}</td>
-              <td>{report.mode}</td>
-              <td>{report.schoolName}</td>
-              <td>{report.suggestedSeverity}</td>
-              <td>{report.status}</td>
+          {reports.length === 0 ? (
+            <tr>
+              <td colSpan={5}>Sin reportes en Neon.</td>
             </tr>
-          ))}
+          ) : (
+            reports.map((report) => (
+              <tr key={report.id}>
+                <td>{report.folio}</td>
+                <td>{report.mode}</td>
+                <td>{report.schoolName}</td>
+                <td>{report.suggestedSeverity}</td>
+                <td>{report.status}</td>
+              </tr>
+            ))
+          )}
         </tbody>
       </table>
     </div>
