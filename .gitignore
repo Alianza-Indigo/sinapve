@@ -10,3 +10,8 @@ coverage
 !.env.example
 *.log
 *.tsbuildinfo
+
+# Playwright
+test-results
+playwright-report
+.playwright
