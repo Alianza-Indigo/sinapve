@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   --indigo: #34208c;
   --violet: #6d4bd1;

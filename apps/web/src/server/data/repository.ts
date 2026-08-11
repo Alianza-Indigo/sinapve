@@ -3243,6 +3243,23 @@ export async function createAndDispatchNotification(input: {
   return { id: row.publicId, status: row.status, deliveries };
 }
 
+// EP-08 / 9.2: puntos territoriales como coordenadas para el mapa (MapLibre).
+export async function listTerritorialPointsForMap(kind?: string) {
+  if (!isDatabaseConfigured()) return [] as Array<{ label: string; kind: string; lng: number; lat: number; weight: number }>;
+  const db = getDb();
+  const rows = await db
+    .select({
+      label: territorialPoints.label,
+      kind: territorialPoints.kind,
+      lng: sql<number>`ST_X(${territorialPoints.location}::geometry)`,
+      lat: sql<number>`ST_Y(${territorialPoints.location}::geometry)`
+    })
+    .from(territorialPoints)
+    .where(kind ? eq(territorialPoints.kind, kind) : sql`true`)
+    .limit(500);
+  return rows.map((row) => ({ label: row.label, kind: row.kind, lng: Number(row.lng), lat: Number(row.lat), weight: 1 }));
+}
+
 // EP / 9.2: alta de punto territorial geolocalizado (PostGIS). La geometria se
 // envia como EWKT y se almacena como geometry(Point, 4326).
 export async function createTerritorialPoint(input: {

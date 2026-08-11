@@ -6,9 +6,10 @@ import { Topbar } from "@/components/Topbar";
 import { ModuleCreateForm } from "@/components/ModuleCreateForm";
 import { ModuleRecordsTable } from "@/components/ModuleRecordsTable";
 import { KpiCard } from "@/components/KpiCard";
-import { MetricWidgetChart } from "@/components/MetricWidgetChart";
+import { EChartWidget } from "@/components/EChartWidget";
+import { RiskMap } from "@/components/RiskMap";
 import { resolveActor } from "@/server/auth/session-actor";
-import { getCertifiedWidgetsForActor, listModuleRecords, listPlatformModules } from "@/server/data/repository";
+import { getCertifiedWidgetsForActor, listModuleRecords, listPlatformModules, listTerritorialPointsForMap } from "@/server/data/repository";
 import { canReadModule } from "@/server/domain/access";
 import type { MetricWidget, PlatformModuleId } from "@/server/domain/types";
 
@@ -77,6 +78,8 @@ export default async function BackofficeModulePage({ params }: { params: Promise
   const isAnalytics = analyticsModules.includes(moduleId as PlatformModuleId);
   const widgets: MetricWidget[] = isAnalytics ? await getCertifiedWidgetsForActor(actor) : [];
   const chartWidgets = widgets.filter((widget) => widget.series.length > 0).slice(0, 6);
+  const isMap = moduleId === "map";
+  const mapPoints = isMap ? await listTerritorialPointsForMap() : [];
 
   return (
     <div className="page-shell">
@@ -99,13 +102,21 @@ export default async function BackofficeModulePage({ params }: { params: Promise
               ))}
             </section>
             {chartWidgets.length > 0 ? (
-              <section className="widget-grid" aria-label="Graficas accesibles" style={{ marginTop: "1rem" }}>
+              <section className="widget-grid" aria-label="Graficas accesibles (ECharts)" style={{ marginTop: "1rem" }}>
                 {chartWidgets.map((widget) => (
-                  <MetricWidgetChart key={`chart-${widget.id}`} widget={widget} />
+                  <EChartWidget key={`chart-${widget.id}`} widget={widget} />
                 ))}
               </section>
             ) : null}
           </>
+        ) : null}
+        {isMap ? (
+          <section className="panel" aria-label="Mapa territorial" style={{ marginTop: "1rem" }}>
+            <p className="eyebrow">Mapa territorial (MapLibre)</p>
+            <h2>Cobertura y recursos georreferenciados</h2>
+            <p className="muted">Solo recursos y agregados no sensibles. Los expedientes individuales nunca se mapean.</p>
+            <RiskMap points={mapPoints} />
+          </section>
         ) : null}
         <section className="panel" style={{ marginTop: "1rem" }}>
           <p className="eyebrow">Operacion</p>
