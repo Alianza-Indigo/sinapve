@@ -1,18 +1,20 @@
 import Link from "next/link";
-import { ArrowRight, BarChart3, LockKeyhole, ShieldAlert } from "lucide-react";
+import { ArrowRight, BarChart3, LockKeyhole, ShieldAlert, WifiOff } from "lucide-react";
 import { Topbar } from "@/components/Topbar";
 import { ReportForm } from "@/components/ReportForm";
 
 export default function HomePage() {
   return (
     <div className="page-shell">
-      <a className="skip-link" href="#main">Saltar al contenido</a>
+      <a className="skip-link" href="#main">
+        Saltar al contenido
+      </a>
       <Topbar />
       <section className="hero-band">
         <p className="eyebrow">Proteccion escolar con trazabilidad humana</p>
         <h1>SINAPVE</h1>
         <p className="lead">
-          Solicitudes de ayuda, protocolos, expedientes y metricas institucionales para prevenir y atender violencia escolar sin revictimizar.
+          Solicitudes de ayuda, protocolos, expedientes, intervenciones, formacion, comunidad, auditoria e indicadores institucionales.
         </p>
         <div className="hero-actions">
           <a className="button danger" href="tel:911">
@@ -22,6 +24,10 @@ export default function HomePage() {
           <Link className="button" href="/backoffice">
             <BarChart3 size={18} aria-hidden="true" />
             Ver operacion
+          </Link>
+          <Link className="button" href="/offline">
+            <WifiOff size={18} aria-hidden="true" />
+            Baja conectividad
           </Link>
         </div>
       </section>
@@ -41,16 +47,21 @@ export default function HomePage() {
             </p>
             <p className="status-pill safe">
               <LockKeyhole size={16} aria-hidden="true" />
-              Sin Supabase · Datos reales en Neon
+              Sin Supabase / datos operativos reales
             </p>
           </section>
           <section className="panel">
             <p className="eyebrow">Datos reales</p>
             <h2>Operacion conectada</h2>
-            <p>Los reportes se guardan en Neon y la evidencia sensible en Blob privado. Si el catalogo territorial no existe, la app no inventa planteles.</p>
-            <Link className="button" href="/backoffice">
-              Abrir tablero <ArrowRight size={18} aria-hidden="true" />
-            </Link>
+            <p>Los reportes se guardan en la base vinculada y la evidencia sensible en almacenamiento privado. Si el catalogo territorial no existe, la app no inventa planteles.</p>
+            <div className="status-row">
+              <Link className="button" href="/seguimiento">
+                Seguimiento <ArrowRight size={18} aria-hidden="true" />
+              </Link>
+              <Link className="button" href="/transparencia">
+                Transparencia <ArrowRight size={18} aria-hidden="true" />
+              </Link>
+            </div>
           </section>
         </aside>
       </main>

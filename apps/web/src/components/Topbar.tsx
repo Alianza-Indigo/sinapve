@@ -13,7 +13,12 @@ export function Topbar() {
       </Link>
       <nav className="nav" aria-label="Navegacion principal">
         <Link href="/">Ayuda</Link>
+        <Link href="/seguimiento">Seguimiento</Link>
+        <Link href="/transparencia">Transparencia</Link>
         <Link href="/backoffice">Backoffice</Link>
+        <Link href="/backoffice/reports">Reportes</Link>
+        <Link href="/backoffice/cases">Casos</Link>
+        <Link href="/backoffice/analytics">Analitica</Link>
       </nav>
       <SensoryModeToggle />
     </header>

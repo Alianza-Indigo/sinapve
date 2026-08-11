@@ -44,7 +44,7 @@ export async function POST(request: Request) {
     }
 
     if (error instanceof Error && error.message === "ORGANIZATION_NOT_FOUND") {
-      return Response.json({ error: "organization_not_found", message: "El plantel no existe en el catalogo territorial de Neon." }, { status: 422 });
+      return Response.json({ error: "organization_not_found", message: "El plantel no existe en el catalogo territorial de la base vinculada." }, { status: 422 });
     }
 
     throw error;

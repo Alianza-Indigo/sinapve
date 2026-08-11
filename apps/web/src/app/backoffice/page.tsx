@@ -5,8 +5,8 @@ import { Topbar } from "@/components/Topbar";
 import { KpiCard } from "@/components/KpiCard";
 import { ReportQueue } from "@/components/ReportQueue";
 import { getActorFromHeaders } from "@/server/auth/current-actor";
-import { getLiveDataStatus, listCases, listReports } from "@/server/data/repository";
-import { canReadCase, canReadReport, hasCapability } from "@/server/domain/access";
+import { getLiveDataStatus, listCases, listPlatformModules, listReports } from "@/server/data/repository";
+import { canReadCase, canReadModule, canReadReport, hasCapability } from "@/server/domain/access";
 import { buildCertifiedWidgets } from "@/server/domain/metrics";
 
 export const dynamic = "force-dynamic";
@@ -34,9 +34,15 @@ export default async function BackofficePage() {
     );
   }
 
-  const [allReports, allCases, liveStatus] = await Promise.all([listReports(), listCases(), getLiveDataStatus()]);
+  const [allReports, allCases, liveStatus, allModules] = await Promise.all([
+    listReports(),
+    listCases(),
+    getLiveDataStatus(),
+    listPlatformModules()
+  ]);
   const reports = allReports.filter((report) => canReadReport(actor, report));
   const cases = allCases.filter((caseFile) => canReadCase(actor, caseFile));
+  const modules = allModules.filter((module) => canReadModule(actor, module.id));
   const widgets = buildCertifiedWidgets(reports, cases);
   const territorialWidget = widgets.find((widget) => widget.id === "G10_TERRITORIAL_RISK");
   const firstCase = cases[0];
@@ -51,8 +57,8 @@ export default async function BackofficePage() {
             <h1 style={{ fontSize: "clamp(2rem, 5vw, 3.4rem)" }}>Centro de proteccion escolar</h1>
             <p className="lead">
               {liveStatus.databaseConfigured
-                ? `Conectado a Neon: ${liveStatus.reports} reportes y ${liveStatus.cases} expedientes visibles.`
-                : "Neon no esta configurado. La plataforma no muestra datos inventados."}
+                ? `${liveStatus.reports} reportes y ${liveStatus.cases} expedientes visibles desde la base vinculada.`
+                : "La base de datos no esta enlazada en este entorno. La plataforma no muestra datos inventados."}
             </p>
           </div>
           {firstCase ? (
@@ -67,6 +73,20 @@ export default async function BackofficePage() {
           {widgets.map((widget) => (
             <KpiCard key={widget.id} widget={widget} />
           ))}
+        </section>
+
+        <section className="panel" style={{ marginTop: "1rem" }} aria-labelledby="modules-title">
+          <p className="eyebrow">Plataforma integral</p>
+          <h2 id="modules-title">Modulos del PRD</h2>
+          <div className="module-grid">
+            {modules.map((module) => (
+              <Link className="module-tile" href={module.href} key={module.id}>
+                <span className="eyebrow">{module.statusLabel}</span>
+                <strong>{module.title}</strong>
+                <span>{module.description}</span>
+              </Link>
+            ))}
+          </div>
         </section>
 
         <div className="main-grid" style={{ paddingInline: 0 }}>
@@ -93,7 +113,7 @@ export default async function BackofficePage() {
               <p className="muted">
                 {territorialWidget?.series.length
                   ? "Celdas pequenas se suprimen antes de llegar al navegador."
-                  : "Sin reportes territoriales en Neon."}
+                  : "Sin reportes territoriales en la base vinculada."}
               </p>
             </section>
             <section className="panel">

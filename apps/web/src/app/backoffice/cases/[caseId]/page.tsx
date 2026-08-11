@@ -56,7 +56,7 @@ export default async function CasePage({ params }: { params: Promise<{ caseId: s
               Regresar
             </Link>
             <section className="panel" style={{ marginTop: "1rem" }}>
-              <p className="eyebrow">Neon requerido</p>
+              <p className="eyebrow">Base requerida</p>
               <h1 style={{ fontSize: "clamp(2rem, 5vw, 3rem)" }}>Base de datos no configurada</h1>
               <p className="lead">
                 Vincula la variable de la base existente para consultar expedientes reales. Esta vista no muestra datos de ejemplo.

@@ -59,7 +59,7 @@ describe("certified metrics", () => {
     expect(reportConversionRate(reports, cases)).toBe(100);
   });
 
-  it("does not invent operational values when Neon has no rows", () => {
+  it("does not invent operational values when the database has no rows", () => {
     const widgets = buildCertifiedWidgets([], []);
     expect(widgets.every((widget) => widget.quality === 0 || widget.id === "G19_CERTIFICATION_COVERAGE")).toBe(true);
     expect(widgets.find((widget) => widget.id === "G01_CASES_OVER_TIME")?.series).toEqual([]);

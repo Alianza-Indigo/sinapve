@@ -8,6 +8,13 @@
       "when": 1786415255112,
       "tag": "0000_black_ozymandias",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1786416178873,
+      "tag": "0001_hesitant_whizzer",
+      "breakpoints": true
     }
   ]
 }

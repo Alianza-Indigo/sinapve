@@ -170,3 +170,36 @@ paths:
           description: Missing verified institutional headers.
         "403":
           description: User role cannot read analytics.
+  /modules:
+    get:
+      summary: List PRD platform modules visible to the current actor.
+      operationId: listModules
+      security:
+        - SinapveInstitutionalHeaders: []
+      responses:
+        "200":
+          description: Authorized module summaries.
+        "401":
+          description: Missing verified institutional headers.
+  /modules/{moduleId}:
+    get:
+      summary: List records for a PRD platform module.
+      operationId: listModuleRecords
+      security:
+        - SinapveInstitutionalHeaders: []
+      parameters:
+        - name: moduleId
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [reports, cases, protocols, risk, interventions, escalations, training, community, audit, analytics, informes, configuration, public-portal, notifications]
+      responses:
+        "200":
+          description: Module records loaded from the database.
+        "401":
+          description: Missing verified institutional headers.
+        "403":
+          description: User role cannot read this module.
+        "404":
+          description: Unknown module.

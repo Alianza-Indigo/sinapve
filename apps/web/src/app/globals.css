@@ -377,6 +377,28 @@ th {
   background: #fde9e9;
 }
 
+.module-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.module-tile {
+  display: grid;
+  gap: 8px;
+  min-height: 150px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  background: #fff;
+  text-decoration: none;
+}
+
+.module-tile strong {
+  font-size: 1.05rem;
+}
+
 .skip-link {
   position: absolute;
   left: 12px;
@@ -407,7 +429,8 @@ th {
 @media (max-width: 920px) {
   .main-grid,
   .kpi-grid,
-  .widget-grid {
+  .widget-grid,
+  .module-grid {
     grid-template-columns: 1fr;
   }
 

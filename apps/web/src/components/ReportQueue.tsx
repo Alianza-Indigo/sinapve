@@ -17,7 +17,7 @@ export function ReportQueue({ reports }: { reports: HelpReport[] }) {
         <tbody>
           {reports.length === 0 ? (
             <tr>
-              <td colSpan={5}>Sin reportes en Neon.</td>
+              <td colSpan={5}>Sin reportes en la base vinculada.</td>
             </tr>
           ) : (
             reports.map((report) => (

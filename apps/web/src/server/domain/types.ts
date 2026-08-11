@@ -122,3 +122,37 @@ export type MetricWidget = {
   privacySuppressedCells: number;
   series: Array<{ label: string; value: number; target?: number }>;
 };
+
+export type PlatformModuleId =
+  | "reports"
+  | "cases"
+  | "protocols"
+  | "risk"
+  | "interventions"
+  | "escalations"
+  | "training"
+  | "community"
+  | "audit"
+  | "analytics"
+  | "informes"
+  | "configuration"
+  | "public-portal"
+  | "notifications";
+
+export type PlatformModuleSummary = {
+  id: PlatformModuleId;
+  title: string;
+  description: string;
+  href: string;
+  count: number;
+  statusLabel: string;
+};
+
+export type PlatformRecord = {
+  id: string;
+  title: string;
+  status: string;
+  owner: string;
+  updatedAt: string;
+  detail: string;
+};
