@@ -17,9 +17,17 @@ capacidad adicional.
 | `DATABASE_URL` | Req | Neon (Vercel Marketplace) — la inyecta la integración | `postgresql://USER:PASSWORD@ep-xxx.neon.tech/DB?sslmode=require` |
 | `BLOB_READ_WRITE_TOKEN` | Req | Vercel Blob (Storage) — la inyecta la integración | `vercel_blob_rw_XXXXXXXX_XXXXXXXXXXXX` |
 
-> Neon requiere la extensión **PostGIS** (la crea la migración `0007`). Ejecute
-> las migraciones Drizzle contra la base antes de operar (`db:generate` ya está
-> versionado; aplique con su flujo de `drizzle-kit migrate`/CI).
+> **Migraciones (importante):** los archivos `apps/web/drizzle/0000–0007` están
+> **generados pero se aplican aparte**. Con `DATABASE_URL` enlazada, ejecute una
+> vez por ambiente, antes de operar:
+>
+> ```bash
+> DATABASE_URL="postgres://..." corepack pnpm db:migrate
+> ```
+>
+> Es idempotente (Drizzle registra lo aplicado). La migración `0007` habilita la
+> extensión **PostGIS**; el rol de base debe poder `CREATE EXTENSION` (en Neon,
+> disponible por defecto). Ver `infra/database/README.md`.
 
 ## B. Secretos que genera usted mismo (no provienen de terceros)
 
