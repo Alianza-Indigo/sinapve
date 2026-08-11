@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { Activity, BrainCircuit, FileText, Lock, Map, ShieldCheck } from "lucide-react";
 import { Topbar } from "@/components/Topbar";
 import { KpiCard } from "@/components/KpiCard";
+import { RealtimeBadge } from "@/components/RealtimeBadge";
 import { ReportQueue } from "@/components/ReportQueue";
 import { resolveActor } from "@/server/auth/session-actor";
 import { isAuthEnabled, signOut } from "@/server/auth/oidc";
@@ -71,6 +72,7 @@ export default async function BackofficePage() {
                 ? `${liveStatus.reports} reportes y ${liveStatus.cases} expedientes visibles desde la base vinculada.`
                 : "La base de datos no esta enlazada en este entorno. La plataforma no muestra datos inventados."}
             </p>
+            <RealtimeBadge />
           </div>
           <div className="status-row">
             {firstCase ? (

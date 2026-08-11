@@ -3249,6 +3249,29 @@ export async function createAndDispatchNotification(input: {
   return { id: row.publicId, status: row.status, deliveries };
 }
 
+// EP / 11.6: conteos operativos en vivo para el canal de tiempo real (SSE).
+// No expone datos sensibles: solo cifras agregadas de colas y pendientes.
+export async function getRealtimeCounts(now = new Date()) {
+  if (!isDatabaseConfigured()) {
+    return { pendingNotifications: 0, overdueReferrals: 0, pendingJobs: 0, criticalCases: 0 };
+  }
+  const db = getDb();
+  const rows = (await db.execute(sql`
+    select
+      (select count(*)::int from notifications where status = 'pendiente') as pending_notifications,
+      (select count(*)::int from referrals where status = 'pendiente' and required_ack_by is not null and required_ack_by < ${now.toISOString()}) as overdue_referrals,
+      (select count(*)::int from durable_jobs where status = 'pendiente') as pending_jobs,
+      (select count(*)::int from cases where severity = 'critica' and state <> 'cerrado') as critical_cases
+  `)) as unknown as { rows?: Array<Record<string, number>> } | Array<Record<string, number>>;
+  const row = (Array.isArray(rows) ? rows[0] : rows.rows?.[0]) ?? {};
+  return {
+    pendingNotifications: Number(row.pending_notifications ?? 0),
+    overdueReferrals: Number(row.overdue_referrals ?? 0),
+    pendingJobs: Number(row.pending_jobs ?? 0),
+    criticalCases: Number(row.critical_cases ?? 0)
+  };
+}
+
 // EP-18 / 6.14: buscador público de Agente Preventivo y canales del plantel.
 // Devuelve SOLO datos seguros (identidad del plantel + canales de ayuda públicos);
 // nunca expone datos de riesgo, expedientes ni personas. Sin autenticación.
