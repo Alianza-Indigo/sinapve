@@ -67,7 +67,7 @@ Para entrar a la consola antes de enlazar el IdP, configure un admin bootstrap:
 | `AUTH_SECRET` | requerido (ver sección B) |
 | `SINAPVE_ADMIN_EMAIL` | `admin@institucion.gob.mx` |
 | `SINAPVE_ADMIN_PASSWORD` | la contraseña (texto), directamente en la variable |
-| `SINAPVE_ADMIN_ROLES` | roles separados por coma; incluya uno con `analytics:read` (p. ej. `FEDERAL`) |
+| `SINAPVE_ADMIN_ROLES` | `SUPER_ADMIN` para acceso total sin restricción (ADR 0005), o roles acotados separados por coma (p. ej. `APVE,UEPE,AUDITOR,PRIVACY_OFFICER`) |
 | `SINAPVE_ADMIN_NAME` | nombre visible (opcional) |
 | `SINAPVE_ADMIN_ORG` | `public_id` de organización para acotar alcance (opcional) |
 

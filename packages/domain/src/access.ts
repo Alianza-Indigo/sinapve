@@ -21,7 +21,36 @@ type Capability =
   | "privacy:read"
   | "notification:read";
 
+const allCapabilities: Capability[] = [
+  "report:create",
+  "report:read",
+  "case:read",
+  "case:update",
+  "protocol:run",
+  "analytics:read",
+  "audit:read",
+  "institution:read",
+  "adaptation:read",
+  "integration:read",
+  "technical:operate",
+  "intervention:read",
+  "referral:read",
+  "training:read",
+  "community:read",
+  "reporting:read",
+  "configuration:read",
+  "privacy:read",
+  "notification:read"
+];
+
+// Superadministrador de plataforma: acceso total sin restriccion (omite la
+// separacion de funciones). Ver docs/adr/0005-super-admin.md.
+export function isSuperAdmin(actor: Actor) {
+  return actor.roles.includes("SUPER_ADMIN");
+}
+
 const roleCapabilities: Record<Role, Capability[]> = {
+  SUPER_ADMIN: allCapabilities,
   PUBLIC: ["report:create"],
   STUDENT: ["report:create", "report:read"],
   FAMILY: ["report:create", "report:read"],
@@ -37,6 +66,7 @@ const roleCapabilities: Record<Role, Capability[]> = {
 };
 
 export function hasCapability(actor: Actor, capability: Capability) {
+  if (isSuperAdmin(actor)) return true;
   return actor.roles.some((role) => roleCapabilities[role].includes(capability));
 }
 
@@ -58,12 +88,14 @@ export function effectivePermissions(actor: Actor): Array<{ capability: Capabili
 }
 
 export function canReadReport(actor: Actor, report: HelpReport) {
+  if (isSuperAdmin(actor)) return true;
   if (!hasCapability(actor, "report:read")) return false;
   if (actor.roles.includes("FEDERAL")) return false;
   return actor.scope.organizationId === report.organizationId || actor.scope.stateCode === report.state;
 }
 
 export function canReadCase(actor: Actor, caseFile: CaseFile, sensitivity: Sensitivity = "confidencial") {
+  if (isSuperAdmin(actor)) return true;
   if (!hasCapability(actor, "case:read")) return false;
   if (sensitivity === "altamente_sensible" && !actor.roles.includes("PRIVACY_OFFICER") && !actor.roles.includes("AUDITOR")) return false;
   if (actor.roles.includes("FEDERAL") || actor.roles.includes("TECH_ADMIN")) return false;
@@ -79,6 +111,7 @@ export function explainAccess(actor: Actor, resource: "report" | "case" | "analy
 }
 
 export function canReadModule(actor: Actor, moduleId: string) {
+  if (isSuperAdmin(actor)) return true;
   if (moduleId === "reports") return hasCapability(actor, "report:read");
   if (moduleId === "cases" || moduleId === "protocols") return hasCapability(actor, "case:read");
   if (moduleId === "risk" || moduleId === "map") return hasCapability(actor, "analytics:read");

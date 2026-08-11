@@ -10,7 +10,11 @@ export type Role =
   | "FEDERAL"
   | "AUDITOR"
   | "PRIVACY_OFFICER"
-  | "TECH_ADMIN";
+  | "TECH_ADMIN"
+  // Superadministrador de plataforma: acceso total sin restriccion. Omite la
+  // separacion de funciones (RBAC/ABAC). Uso para el operador de la plataforma;
+  // cada acceso queda auditado. Ver docs/adr/0005-super-admin.md.
+  | "SUPER_ADMIN";
 
 export type Severity = "leve" | "moderada" | "grave" | "critica";
 export type ReportMode = "anonimo" | "confidencial" | "identificado";

@@ -13,7 +13,8 @@ const validRoles: Role[] = [
   "FEDERAL",
   "AUDITOR",
   "PRIVACY_OFFICER",
-  "TECH_ADMIN"
+  "TECH_ADMIN",
+  "SUPER_ADMIN"
 ];
 
 function parseRoles(value: string | null): Role[] {
