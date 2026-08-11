@@ -24,3 +24,16 @@
 | IA supervisada | EP-09 | Como APVE veo recomendaciones como borrador con confirmacion humana obligatoria | `ai-policy.test.ts` |
 | Cero Supabase | Plataforma | Como equipo tecnico evito paquetes y variables prohibidas | `package.test.ts` |
 | Plataforma integral | EP-01..EP-18 | Como usuario autorizado navego todos los modulos del PRD sin datos inventados | `repository.test.ts` |
+| MFA/step-up en privilegios elevados | EP-01 | Como plataforma exijo segundo factor para case:update, protocol:run, audit, privacidad y break-glass | `mfa.test.ts` |
+| Motor SLA y ventanas de vencimiento | EP-04 | Como sistema calculo hitos, estado normal/proximo/vencido y pausas auditables | `sla.test.ts` |
+| Migracion de protocolo activo | EP-04 | Como responsable migro un expediente a una nueva version de protocolo | API `/protocol-runs/{runId}/migrate` |
+| Revision de plan de intervencion | EP-05 | Como APVE reviso resultados y programo la siguiente revision del plan | API `/intervention-plans/{planId}/review` |
+| Escalamiento por falta de respuesta | EP-06 | Como sistema escalo referencias sin acuse y cierro el circuito | `sla.test.ts`, API `/referrals/{referralId}/escalate`, Cron `/cron/sla-review` |
+| Ciclo de vida EMIR y sesiones colegiadas | EP-07 | Como coordinador despacho/libero equipos EMIR y registro quorum y acuerdos | API `/emir-dispatches/{id}/advance`, `/institutional-sessions` |
+| Certificacion verificable y recertificacion | EP-10 | Como formador inscribo, emito certificados con codigo verificable y vigencia | API `/training/enrollments`, `/training/enrollments/{id}/certify` |
+| Mediacion con bloqueos automaticos | EP-11 | Como sistema bloqueo mediacion en violencia grave, sexual, coercitiva o delictiva | `mediation.test.ts` |
+| Metricas certificadas y supresion de celdas | EP-13 | Como analista uso formulas versionadas con umbral de privacidad | `dashboards.test.ts` |
+| Informes autogenerados con aprobacion humana | EP-14 | Como autoridad genero borradores desde metricas certificadas y los apruebo | API `/report-jobs`, `/report-jobs/{reportId}/approve` |
+| Aprobacion editorial/legal de campanas | EP-15 | Como comunicador publico campanas solo con doble aprobacion | API `/campaigns/{campaignId}/advance` |
+| Constructor de tableros certificados | EP-17 | Como administrador publico tableros validando widgets certificados sin SQL libre | `dashboards.test.ts`, API `/dashboards/{dashboardId}/publish` |
+| Adaptaciones con revision multidisciplinaria | EP-17 | Como UEPE avanzo la revision tecnica/juridica/accesible/privacidad antes de aprobar | API `/adaptations/{adaptationId}/advance` |

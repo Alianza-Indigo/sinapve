@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { getActorFromHeaders } from "@/server/auth/current-actor";
-import { createGovernanceRecord } from "@/server/data/repository";
+import { createGovernanceRecord, generateReportDraft } from "@/server/data/repository";
 import { DatabaseNotConfiguredError } from "@/server/db";
 import { hasCapability } from "@/server/domain/access";
 
@@ -24,13 +24,23 @@ export async function POST(request: Request) {
   if (!parsed.success) return Response.json({ error: "invalid_report_job", issues: parsed.error.flatten() }, { status: 400 });
 
   try {
-    const data = await createGovernanceRecord("informes", {
-      title: parsed.data.title,
-      reportType: parsed.data.reportType,
-      metadata: parsed.data.scope,
-      narrative: parsed.data.narrative,
-      actor
-    });
+    // Sin narrativa explicita se autogenera un borrador desde metricas
+    // certificadas (8.5); con narrativa se registra el informe tal cual. En
+    // ambos casos la publicacion exige aprobacion humana posterior.
+    const data = parsed.data.narrative
+      ? await createGovernanceRecord("informes", {
+          title: parsed.data.title,
+          reportType: parsed.data.reportType,
+          metadata: parsed.data.scope,
+          narrative: parsed.data.narrative,
+          actor
+        })
+      : await generateReportDraft({
+          title: parsed.data.title,
+          reportType: parsed.data.reportType,
+          scope: parsed.data.scope,
+          actor
+        });
     return Response.json({ data }, { status: 202 });
   } catch (error) {
     if (error instanceof DatabaseNotConfiguredError) return Response.json({ error: "database_not_configured", message: error.message }, { status: 503 });

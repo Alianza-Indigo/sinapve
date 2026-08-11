@@ -26,6 +26,7 @@ import {
   generatedReports,
   interventionPlans,
   institutionalBodies,
+  institutionalBodyMembers,
   institutionalSessions,
   integrationEvents,
   mediationReviews,
@@ -60,6 +61,10 @@ import {
   users
 } from "../db/schema";
 import { suggestSeverity } from "../domain/protocols";
+import { evaluateMediation } from "../domain/mediation";
+import { isReferralOverdue } from "../domain/sla";
+import { validateDashboardWidgets } from "../domain/dashboards";
+import { buildCertifiedWidgets } from "../domain/metrics";
 import type { Actor, CaseFile, CaseState, CaseTimelineEvent, HelpReport, PlatformModuleId, PlatformModuleSummary, PlatformRecord, ReportMode, Severity } from "../domain/types";
 
 export type LiveDataStatus = {
@@ -1416,7 +1421,7 @@ export async function createCaseControlRecord(input:
   | { controlType: "consent"; caseId: string; subjectLabel: string; consentType: string; legalBasis?: string; status?: string; evidence?: string; actor: Actor }
   | { controlType: "clinical_compartment"; caseId: string; authorizedRole: string; summary: string; status?: string; actor: Actor }
   | { controlType: "adendum"; caseId: string; fieldName: string; value: string; reason: string; actor: Actor }
-  | { controlType: "mediation_review"; caseId: string; eligible: boolean; blockedReasons?: string[]; actor: Actor }
+  | { controlType: "mediation_review"; caseId: string; eligible?: boolean; blockedReasons?: string[]; narrative?: string; categories?: string[]; voluntary?: boolean; powerAsymmetry?: boolean; actor: Actor }
 ) {
   if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
 
@@ -1491,14 +1496,27 @@ export async function createCaseControlRecord(input:
       .returning({ id: caseFieldVersions.id, status: caseFieldVersions.fieldName });
     result = { id: row.id, type: input.controlType, status: row.status };
   } else {
+    // Auto-evaluacion determinista de bloqueo (6.10) a partir de la severidad
+    // del expediente y las senales aportadas. Si quien opera afirma explicitamente
+    // eligible=false, se respeta el bloqueo manual y se suman sus motivos.
+    const evaluation = evaluateMediation({
+      severity: caseRow.severity,
+      narrative: input.narrative,
+      categories: input.categories,
+      voluntary: input.voluntary,
+      powerAsymmetry: input.powerAsymmetry
+    });
+    const manualBlockReasons = input.eligible === false ? ["bloqueo_manual_revisor"] : [];
+    const blockedReasons = [...new Set([...evaluation.blockedReasons, ...(input.blockedReasons ?? []), ...manualBlockReasons])];
+    const eligible = evaluation.eligible && input.eligible !== false;
     const publicId = `med_${nanoid(10)}`;
     const [row] = await db
       .insert(mediationReviews)
       .values({
         publicId,
         caseId: caseRow.id,
-        eligible: input.eligible,
-        blockedReasons: input.blockedReasons ?? []
+        eligible,
+        blockedReasons
       })
       .returning({ id: mediationReviews.publicId, eligible: mediationReviews.eligible });
     result = { id: row.id, type: input.controlType, status: row.eligible ? "elegible" : "bloqueada" };
@@ -2524,4 +2542,535 @@ export async function listPrivacyRequests() {
     .orderBy(desc(privacyRequests.createdAt))
     .limit(100);
   return rows.map((row) => platformRecord({ ...row, detail: row.detail ? `Vence ${toIso(row.detail)}` : "" }));
+}
+
+// ---------------------------------------------------------------------------
+// Transiciones de ciclo de vida (EP-04, EP-05, EP-06, EP-07, EP-10, EP-13,
+// EP-14, EP-15, EP-17). Reutilizan el modelo de datos existente y registran
+// evento de auditoria append-only por cada mutacion sensible.
+// ---------------------------------------------------------------------------
+
+// EP-07: ciclo de vida de despacho EMIR (disponible -> despachado -> en_sitio ->
+// liberado) con sellos de tiempo de llegada e intervencion.
+const emirTransitions: Record<string, { next: string[]; stamp?: "dispatchedAt" | "arrivedAt" | "releasedAt" }> = {
+  disponible: { next: ["despachado"] },
+  despachado: { next: ["en_sitio"], stamp: "dispatchedAt" },
+  en_sitio: { next: ["liberado"], stamp: "arrivedAt" },
+  liberado: { next: [], stamp: "releasedAt" }
+};
+
+export async function advanceEmirDispatch(input: { dispatchId: string; toStatus: string; capacitySnapshot?: Record<string, unknown>; actor: Actor }) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const [dispatch] = await db
+    .select({ id: emirDispatches.id, publicId: emirDispatches.publicId, status: emirDispatches.status })
+    .from(emirDispatches)
+    .where(eq(emirDispatches.publicId, input.dispatchId))
+    .limit(1);
+  if (!dispatch) throw new Error("EMIR_DISPATCH_NOT_FOUND");
+
+  const allowed = emirTransitions[dispatch.status]?.next ?? [];
+  if (!allowed.includes(input.toStatus)) throw new Error("INVALID_DISPATCH_TRANSITION");
+
+  const stampField = emirTransitions[input.toStatus]?.stamp;
+  const updateValues: Record<string, unknown> = { status: input.toStatus };
+  if (stampField) updateValues[stampField] = new Date();
+  if (input.capacitySnapshot) updateValues.capacitySnapshot = input.capacitySnapshot;
+
+  const [updated] = await db
+    .update(emirDispatches)
+    .set(updateValues)
+    .where(eq(emirDispatches.id, dispatch.id))
+    .returning({ publicId: emirDispatches.publicId, status: emirDispatches.status });
+
+  await db.insert(auditEvents).values({
+    action: "emir_dispatch.advance",
+    resourceType: "emir_dispatch",
+    resourceId: updated.publicId,
+    reason: "emir_lifecycle_transition",
+    metadata: { actorId: input.actor.id, from: dispatch.status, to: input.toStatus }
+  });
+  return { id: updated.publicId, status: updated.status };
+}
+
+// EP-07: sesiones de cuerpos colegiados con quorum, acuerdos y tareas.
+export async function createInstitutionalSession(input: {
+  bodyPublicId: string;
+  scheduledAt: string;
+  agenda?: Array<Record<string, unknown>>;
+  actor: Actor;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const [body] = await db
+    .select({ id: institutionalBodies.id, publicId: institutionalBodies.publicId })
+    .from(institutionalBodies)
+    .where(eq(institutionalBodies.publicId, input.bodyPublicId))
+    .limit(1);
+  if (!body) throw new Error("INSTITUTIONAL_BODY_NOT_FOUND");
+
+  const publicId = `isession_${nanoid(10)}`;
+  const [session] = await db
+    .insert(institutionalSessions)
+    .values({
+      publicId,
+      bodyId: body.id,
+      scheduledAt: new Date(input.scheduledAt),
+      agenda: input.agenda ?? []
+    })
+    .returning({ publicId: institutionalSessions.publicId, status: institutionalSessions.status });
+
+  await db.insert(auditEvents).values({
+    action: "institutional_session.create",
+    resourceType: "institutional_session",
+    resourceId: session.publicId,
+    reason: "collegiate_governance",
+    metadata: { actorId: input.actor.id, bodyPublicId: body.publicId }
+  });
+  return { id: session.publicId, status: session.status };
+}
+
+export async function recordInstitutionalSessionOutcome(input: {
+  sessionId: string;
+  presentMembers: number;
+  agreements?: Array<Record<string, unknown>>;
+  tasks?: Array<Record<string, unknown>>;
+  actor: Actor;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const [session] = await db
+    .select({ id: institutionalSessions.id, publicId: institutionalSessions.publicId, bodyId: institutionalSessions.bodyId })
+    .from(institutionalSessions)
+    .where(eq(institutionalSessions.publicId, input.sessionId))
+    .limit(1);
+  if (!session) throw new Error("INSTITUTIONAL_SESSION_NOT_FOUND");
+
+  // Quorum: mayoria simple de integrantes vigentes del cuerpo, salvo regla
+  // configurada. La regla fina vive en institutionalBodies.quorumRules.
+  const members = await db
+    .select({ id: institutionalBodyMembers.id })
+    .from(institutionalBodyMembers)
+    .where(eq(institutionalBodyMembers.bodyId, session.bodyId));
+  const required = Math.floor(members.length / 2) + 1;
+  const quorumMet = members.length > 0 && input.presentMembers >= required;
+
+  const [updated] = await db
+    .update(institutionalSessions)
+    .set({
+      quorumMet,
+      agreements: input.agreements ?? [],
+      tasks: input.tasks ?? [],
+      status: quorumMet ? "celebrada" : "sin_quorum"
+    })
+    .where(eq(institutionalSessions.id, session.id))
+    .returning({ publicId: institutionalSessions.publicId, status: institutionalSessions.status, quorumMet: institutionalSessions.quorumMet });
+
+  await db.insert(auditEvents).values({
+    action: "institutional_session.outcome",
+    resourceType: "institutional_session",
+    resourceId: updated.publicId,
+    reason: "collegiate_agreements",
+    metadata: { actorId: input.actor.id, quorumMet, presentMembers: input.presentMembers, requiredForQuorum: required }
+  });
+  return { id: updated.publicId, status: updated.status, quorumMet: updated.quorumMet, requiredForQuorum: required };
+}
+
+// EP-10: inscripcion, emision de certificado verificable por QR y recertificacion.
+export async function enrollInTraining(input: { programPublicId: string; userExternalSubject: string; actor: Actor }) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const [program] = await db.select({ id: trainingPrograms.id }).from(trainingPrograms).where(eq(trainingPrograms.publicId, input.programPublicId)).limit(1);
+  if (!program) throw new Error("TRAINING_PROGRAM_NOT_FOUND");
+  const user = await findUserRow(input.userExternalSubject);
+  if (!user) throw new Error("USER_NOT_FOUND");
+
+  const [enrollment] = await db
+    .insert(trainingEnrollments)
+    .values({ userId: user.id, programId: program.id })
+    .returning({ id: trainingEnrollments.id, status: trainingEnrollments.status, progressPercent: trainingEnrollments.progressPercent });
+
+  await db.insert(auditEvents).values({
+    action: "training_enrollment.create",
+    resourceType: "training_enrollment",
+    resourceId: enrollment.id,
+    reason: "certification_by_competency",
+    metadata: { actorId: input.actor.id, programPublicId: input.programPublicId, userExternalSubject: input.userExternalSubject }
+  });
+  return { id: enrollment.id, status: enrollment.status, progressPercent: enrollment.progressPercent };
+}
+
+export async function issueCertification(input: { enrollmentId: string; validityMonths?: number; actor: Actor }) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const [enrollment] = await db
+    .select({ id: trainingEnrollments.id, progressPercent: trainingEnrollments.progressPercent })
+    .from(trainingEnrollments)
+    .where(eq(trainingEnrollments.id, input.enrollmentId))
+    .limit(1);
+  if (!enrollment) throw new Error("TRAINING_ENROLLMENT_NOT_FOUND");
+  if (enrollment.progressPercent < 100) throw new Error("TRAINING_INCOMPLETE");
+
+  const validityMonths = Math.min(Math.max(input.validityMonths ?? 24, 1), 60);
+  const certifiedAt = new Date();
+  const expiresAt = new Date(certifiedAt);
+  expiresAt.setMonth(expiresAt.getMonth() + validityMonths);
+  const certificatePublicCode = `CERT-${nanoid(6).toUpperCase()}-${nanoid(6).toUpperCase()}`;
+
+  const [updated] = await db
+    .update(trainingEnrollments)
+    .set({ status: "certificado", certificatePublicCode, certifiedAt, expiresAt, updatedAt: new Date() })
+    .where(eq(trainingEnrollments.id, enrollment.id))
+    .returning({ certificatePublicCode: trainingEnrollments.certificatePublicCode, expiresAt: trainingEnrollments.expiresAt });
+
+  await db.insert(auditEvents).values({
+    action: "training_certification.issue",
+    resourceType: "training_enrollment",
+    resourceId: input.enrollmentId,
+    reason: "verifiable_certification",
+    metadata: { actorId: input.actor.id, certificatePublicCode: updated.certificatePublicCode }
+  });
+  return {
+    id: input.enrollmentId,
+    certificatePublicCode: updated.certificatePublicCode,
+    expiresAt: updated.expiresAt ? toIso(updated.expiresAt) : null,
+    verifyPath: `/api/v1/certifications/verify/${updated.certificatePublicCode}`
+  };
+}
+
+// EP-05: revision del plan de intervencion, evaluacion de resultados y ciclo de
+// no repeticion (revision semanal/mensual/trimestral).
+export async function reviewInterventionPlan(input: {
+  planId: string;
+  outcome: string;
+  status?: string;
+  nextReviewAt?: string;
+  actor: Actor;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const [plan] = await db
+    .select({ id: interventionPlans.id, publicId: interventionPlans.publicId, caseId: interventionPlans.caseId })
+    .from(interventionPlans)
+    .where(eq(interventionPlans.publicId, input.planId))
+    .limit(1);
+  if (!plan) throw new Error("INTERVENTION_PLAN_NOT_FOUND");
+
+  const [updated] = await db
+    .update(interventionPlans)
+    .set({
+      status: input.status ?? "en_revision",
+      nextReviewAt: input.nextReviewAt ? new Date(input.nextReviewAt) : null,
+      updatedAt: new Date()
+    })
+    .where(eq(interventionPlans.id, plan.id))
+    .returning({ publicId: interventionPlans.publicId, status: interventionPlans.status, nextReviewAt: interventionPlans.nextReviewAt });
+
+  await db.insert(caseEvents).values({
+    caseId: plan.caseId,
+    title: "Revision de plan de intervencion",
+    bodyCiphertext: encryptSensitiveText(input.outcome),
+    eventType: "intervention.review"
+  });
+  await db.insert(auditEvents).values({
+    action: "intervention_plan.review",
+    resourceType: "intervention_plan",
+    resourceId: updated.publicId,
+    reason: "intervention_followup",
+    metadata: { actorId: input.actor.id, status: updated.status }
+  });
+  return { id: updated.publicId, status: updated.status, nextReviewAt: updated.nextReviewAt ? toIso(updated.nextReviewAt) : null };
+}
+
+// EP-06: escalamiento por falta de respuesta (circuito cerrado). Marca la
+// referencia como sin_respuesta, incrementa el contador de reintentos en
+// metadata y deja rastro auditable. Reutilizable por Cron y por accion manual.
+export async function escalateReferral(input: { referralId: string; reason: string; actor: Actor }) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const [referral] = await db
+    .select({ id: referrals.id, publicId: referrals.publicId, status: referrals.status, metadata: referrals.metadata, caseId: referrals.caseId })
+    .from(referrals)
+    .where(eq(referrals.publicId, input.referralId))
+    .limit(1);
+  if (!referral) throw new Error("REFERRAL_NOT_FOUND");
+
+  const attempts = Number((referral.metadata as Record<string, unknown>)?.escalationAttempts ?? 0) + 1;
+  const nextStatus = attempts >= 3 ? "escalado_superior" : "sin_respuesta";
+  const [updated] = await db
+    .update(referrals)
+    .set({
+      status: nextStatus,
+      metadata: { ...(referral.metadata as Record<string, unknown>), escalationAttempts: attempts, lastEscalationReason: input.reason }
+    })
+    .where(eq(referrals.id, referral.id))
+    .returning({ publicId: referrals.publicId, status: referrals.status });
+
+  await db.insert(caseEvents).values({
+    caseId: referral.caseId,
+    title: "Escalamiento por falta de respuesta externa",
+    bodyCiphertext: encryptSensitiveText(`${nextStatus}:${input.reason}`),
+    eventType: "referral.escalate"
+  });
+  await db.insert(auditEvents).values({
+    action: "referral.escalate",
+    resourceType: "referral",
+    resourceId: updated.publicId,
+    reason: "closed_loop_no_response",
+    metadata: { actorId: input.actor.id, attempts, status: nextStatus }
+  });
+  return { id: updated.publicId, status: updated.status, escalationAttempts: attempts };
+}
+
+// Barrido de referencias vencidas para el Cron diario de revision SLA.
+export async function sweepOverdueReferrals(input: { actor: Actor; now?: Date }) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const now = input.now ?? new Date();
+  const pending = await db
+    .select({ publicId: referrals.publicId, status: referrals.status, requiredAckBy: referrals.requiredAckBy })
+    .from(referrals)
+    .where(eq(referrals.status, "pendiente"))
+    .limit(500);
+
+  const overdue = pending.filter((referral) => isReferralOverdue(referral, now));
+  const escalated: string[] = [];
+  for (const referral of overdue) {
+    await escalateReferral({ referralId: referral.publicId, reason: "sla_review_sin_acuse", actor: input.actor });
+    escalated.push(referral.publicId);
+  }
+  return { reviewed: pending.length, escalated };
+}
+
+// EP-15: flujo editorial/legal de campanas y registro de metricas de alcance.
+export async function advanceCampaign(input: {
+  campaignId: string;
+  editorialStatus?: string;
+  legalStatus?: string;
+  status?: string;
+  metrics?: Record<string, unknown>;
+  actor: Actor;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const [campaign] = await db
+    .select({
+      id: communicationCampaigns.id,
+      publicId: communicationCampaigns.publicId,
+      editorialStatus: communicationCampaigns.editorialStatus,
+      legalStatus: communicationCampaigns.legalStatus,
+      metrics: communicationCampaigns.metrics
+    })
+    .from(communicationCampaigns)
+    .where(eq(communicationCampaigns.publicId, input.campaignId))
+    .limit(1);
+  if (!campaign) throw new Error("CAMPAIGN_NOT_FOUND");
+
+  const editorialStatus = input.editorialStatus ?? campaign.editorialStatus;
+  const legalStatus = input.legalStatus ?? campaign.legalStatus;
+  // Solo se publica con doble aprobacion editorial y legal (6.12).
+  let status = input.status ?? "borrador";
+  if (status === "publicada" && !(editorialStatus === "aprobada" && legalStatus === "aprobada")) {
+    throw new Error("CAMPAIGN_APPROVAL_INCOMPLETE");
+  }
+
+  const [updated] = await db
+    .update(communicationCampaigns)
+    .set({
+      editorialStatus,
+      legalStatus,
+      status,
+      metrics: input.metrics ?? (campaign.metrics as Record<string, unknown>)
+    })
+    .where(eq(communicationCampaigns.id, campaign.id))
+    .returning({ publicId: communicationCampaigns.publicId, status: communicationCampaigns.status, editorialStatus: communicationCampaigns.editorialStatus, legalStatus: communicationCampaigns.legalStatus });
+
+  await db.insert(auditEvents).values({
+    action: "communication_campaign.advance",
+    resourceType: "communication_campaign",
+    resourceId: updated.publicId,
+    reason: "editorial_legal_governance",
+    metadata: { actorId: input.actor.id, editorialStatus, legalStatus, status }
+  });
+  return { id: updated.publicId, status: updated.status, editorialStatus: updated.editorialStatus, legalStatus: updated.legalStatus };
+}
+
+// EP-17 / EP-16: avance de revision y aprobacion de adaptaciones contextuales.
+const adaptationReviewFlow = ["tecnica", "juridica", "accesibilidad", "privacidad", "completa"];
+
+export async function advanceContextualAdaptation(input: {
+  adaptationId: string;
+  reviewStatus?: string;
+  approvalStatus?: string;
+  publicSummary?: string;
+  actor: Actor;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const [adaptation] = await db
+    .select({ id: contextualAdaptations.id, publicId: contextualAdaptations.publicId, reviewStatus: contextualAdaptations.reviewStatus })
+    .from(contextualAdaptations)
+    .where(eq(contextualAdaptations.publicId, input.adaptationId))
+    .limit(1);
+  if (!adaptation) throw new Error("CONTEXTUAL_ADAPTATION_NOT_FOUND");
+
+  if (input.reviewStatus && !adaptationReviewFlow.includes(input.reviewStatus)) {
+    throw new Error("INVALID_ADAPTATION_REVIEW");
+  }
+  // Solo se aprueba tras completar la revision multidisciplinaria (6.13).
+  if (input.approvalStatus === "aprobada" && (input.reviewStatus ?? adaptation.reviewStatus) !== "completa") {
+    throw new Error("ADAPTATION_REVIEW_INCOMPLETE");
+  }
+
+  const updateValues: Record<string, unknown> = { reviewStatus: input.reviewStatus ?? adaptation.reviewStatus };
+  if (input.approvalStatus) updateValues.approvalStatus = input.approvalStatus;
+  if (input.publicSummary !== undefined) updateValues.publicSummary = input.publicSummary;
+  const [updated] = await db
+    .update(contextualAdaptations)
+    .set(updateValues)
+    .where(eq(contextualAdaptations.id, adaptation.id))
+    .returning({ publicId: contextualAdaptations.publicId, reviewStatus: contextualAdaptations.reviewStatus, approvalStatus: contextualAdaptations.approvalStatus });
+
+  await db.insert(auditEvents).values({
+    action: "contextual_adaptation.advance",
+    resourceType: "contextual_adaptation",
+    resourceId: updated.publicId,
+    reason: "adaptation_review_flow",
+    metadata: { actorId: input.actor.id, reviewStatus: updated.reviewStatus, approvalStatus: updated.approvalStatus }
+  });
+  return { id: updated.publicId, reviewStatus: updated.reviewStatus, approvalStatus: updated.approvalStatus };
+}
+
+// EP-14: aprobacion humana obligatoria de informes autogenerados.
+export async function approveGeneratedReport(input: { reportId: string; actor: Actor }) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const actorRow = await findUserRow(input.actor.id);
+  const [report] = await db
+    .select({ id: generatedReports.id, publicId: generatedReports.publicId, status: generatedReports.status })
+    .from(generatedReports)
+    .where(eq(generatedReports.publicId, input.reportId))
+    .limit(1);
+  if (!report) throw new Error("GENERATED_REPORT_NOT_FOUND");
+
+  const [updated] = await db
+    .update(generatedReports)
+    .set({ status: "aprobado", approvedByUserId: actorRow?.id, approvedAt: new Date() })
+    .where(eq(generatedReports.id, report.id))
+    .returning({ publicId: generatedReports.publicId, status: generatedReports.status, approvedAt: generatedReports.approvedAt });
+
+  await db.insert(auditEvents).values({
+    action: "generated_report.approve",
+    resourceType: "generated_report",
+    resourceId: updated.publicId,
+    reason: "human_approved_narrative",
+    metadata: { actorId: input.actor.id }
+  });
+  return { id: updated.publicId, status: updated.status, approvedAt: updated.approvedAt ? toIso(updated.approvedAt) : null };
+}
+
+// EP-13 / EP-17: publicacion de tablero validando que solo use widgets
+// certificados (sin SQL ni formulas libres).
+export async function publishDashboard(input: { dashboardId: string; actor: Actor }) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const [dashboard] = await db
+    .select({ id: dashboardLayouts.id, publicId: dashboardLayouts.publicId, widgets: dashboardLayouts.widgets, version: dashboardLayouts.version })
+    .from(dashboardLayouts)
+    .where(eq(dashboardLayouts.publicId, input.dashboardId))
+    .limit(1);
+  if (!dashboard) throw new Error("DASHBOARD_NOT_FOUND");
+
+  const validation = validateDashboardWidgets((dashboard.widgets as Array<Record<string, unknown>>) ?? []);
+  if (!validation.valid) {
+    const error = new Error("DASHBOARD_VALIDATION_FAILED");
+    (error as Error & { details?: string[] }).details = validation.errors;
+    throw error;
+  }
+
+  const [updated] = await db
+    .update(dashboardLayouts)
+    .set({ status: "publicado", version: dashboard.version + 1 })
+    .where(eq(dashboardLayouts.id, dashboard.id))
+    .returning({ publicId: dashboardLayouts.publicId, status: dashboardLayouts.status, version: dashboardLayouts.version });
+
+  await db.insert(auditEvents).values({
+    action: "dashboard.publish",
+    resourceType: "dashboard",
+    resourceId: updated.publicId,
+    reason: "certified_widgets_only",
+    metadata: { actorId: input.actor.id, version: updated.version }
+  });
+  return { id: updated.publicId, status: updated.status, version: updated.version };
+}
+
+// EP-04: ejecucion de migracion de un protocolo activo a una nueva version.
+export async function migrateProtocolRun(input: { runId: string; toProtocolCode: string; reason: string; actor: Actor }) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const [run] = await db
+    .select({ id: protocolRuns.id, caseId: protocolRuns.caseId, protocolVersionId: protocolRuns.protocolVersionId })
+    .from(protocolRuns)
+    .where(eq(protocolRuns.id, input.runId))
+    .limit(1);
+  if (!run) throw new Error("PROTOCOL_RUN_NOT_FOUND");
+  const toVersion = await findProtocolVersionRow(input.toProtocolCode);
+  if (!toVersion) throw new Error("PROTOCOL_VERSION_NOT_FOUND");
+
+  const caseRow = await db.select({ publicId: cases.publicId }).from(cases).where(eq(cases.id, run.caseId)).limit(1);
+
+  await db.update(protocolRuns).set({ protocolVersionId: toVersion.id }).where(eq(protocolRuns.id, run.id));
+  const [migration] = await db
+    .insert(protocolMigrations)
+    .values({
+      publicId: `pmig_${nanoid(10)}`,
+      caseId: run.caseId,
+      fromProtocolVersionId: run.protocolVersionId,
+      toProtocolVersionId: toVersion.id,
+      reason: input.reason,
+      status: "aplicada"
+    })
+    .returning({ publicId: protocolMigrations.publicId, status: protocolMigrations.status });
+
+  await db.insert(caseEvents).values({
+    caseId: run.caseId,
+    title: "Migracion de protocolo aplicada",
+    bodyCiphertext: encryptSensitiveText(`${input.toProtocolCode}:${input.reason}`),
+    eventType: "protocol.migrate"
+  });
+  await db.insert(auditEvents).values({
+    action: "protocol_run.migrate",
+    resourceType: "protocol_run",
+    resourceId: input.runId,
+    reason: "explicit_version_migration",
+    metadata: { actorId: input.actor.id, toProtocolCode: input.toProtocolCode, migrationId: migration.publicId, caseId: caseRow[0]?.publicId }
+  });
+  return { id: input.runId, migrationId: migration.publicId, status: migration.status, toProtocolCode: input.toProtocolCode };
+}
+
+// EP-14: borrador de informe a partir de metricas certificadas. La narrativa es
+// solo un resumen deterministico; su publicacion exige aprobacion humana.
+export async function generateReportDraft(input: {
+  title: string;
+  reportType: string;
+  scope?: Record<string, unknown>;
+  actor: Actor;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const [reports_, cases_] = await Promise.all([listReports(), listCases()]);
+  const widgets = buildCertifiedWidgets(reports_, cases_);
+  const highlights = widgets
+    .filter((widget) => widget.series.length > 0)
+    .slice(0, 6)
+    .map((widget) => `${widget.title}: ${widget.valueLabel}`)
+    .join("; ");
+  const narrative = `Borrador basado en metricas certificadas al ${new Date().toISOString()}. ${highlights || "Sin datos suficientes para el periodo."} Requiere validacion humana antes de publicar.`;
+
+  return createGovernanceRecord("informes", {
+    title: input.title,
+    reportType: input.reportType,
+    metadata: { ...(input.scope ?? {}), certified: true, reports: reports_.length, cases: cases_.length },
+    narrative,
+    actor: input.actor
+  });
 }

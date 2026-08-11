@@ -33,6 +33,7 @@ export function getActorFromHeaders(headers: Headers): Actor | null {
     id,
     name: headers.get("x-sinapve-user-name") ?? id,
     roles,
+    mfaVerified: headers.get("x-sinapve-mfa-verified") === "true",
     scope: {
       organizationId: headers.get("x-sinapve-organization-id") ?? undefined,
       stateCode: headers.get("x-sinapve-state-code") ?? undefined,
