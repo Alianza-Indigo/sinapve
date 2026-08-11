@@ -10,7 +10,7 @@ import { EChartWidget } from "@/components/EChartWidget";
 import { RiskMap } from "@/components/RiskMap";
 import { resolveActor } from "@/server/auth/session-actor";
 import { getCertifiedWidgetsForActor, listModuleRecords, listPlatformModules, listTerritorialPointsForMap } from "@/server/data/repository";
-import { canReadModule } from "@/server/domain/access";
+import { canReadModule, hasCapability } from "@/server/domain/access";
 import type { MetricWidget, PlatformModuleId } from "@/server/domain/types";
 
 const analyticsModules: PlatformModuleId[] = ["analytics", "risk", "map"];
@@ -98,6 +98,13 @@ export default async function BackofficeModulePage({ params }: { params: Promise
           <p className="eyebrow">{module.statusLabel}</p>
           <h1 style={{ fontSize: "clamp(2rem, 5vw, 3.2rem)" }}>{module.title}</h1>
           <p className="lead">{module.description}</p>
+          {moduleId === "protocols" && hasCapability(actor, "protocol:author") ? (
+            <div className="hero-actions" style={{ marginTop: "0.75rem" }}>
+              <Link className="button primary" href="/backoffice/protocols/builder">
+                Abrir constructor visual de protocolos
+              </Link>
+            </div>
+          ) : null}
         </section>
         {isAnalytics ? (
           <>

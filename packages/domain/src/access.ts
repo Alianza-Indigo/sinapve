@@ -6,6 +6,7 @@ type Capability =
   | "case:read"
   | "case:update"
   | "protocol:run"
+  | "protocol:author"
   | "analytics:read"
   | "audit:read"
   | "institution:read"
@@ -27,6 +28,7 @@ const allCapabilities: Capability[] = [
   "case:read",
   "case:update",
   "protocol:run",
+  "protocol:author",
   "analytics:read",
   "audit:read",
   "institution:read",
@@ -57,7 +59,7 @@ const roleCapabilities: Record<Role, Capability[]> = {
   SCHOOL_STAFF: ["report:create"],
   APVE: ["report:read", "case:read", "case:update", "protocol:run", "analytics:read", "intervention:read", "referral:read", "institution:read", "training:read", "community:read", "notification:read"],
   SCHOOL_DIRECTOR: ["report:read", "case:read", "analytics:read", "intervention:read", "institution:read", "training:read", "community:read", "reporting:read"],
-  UEPE: ["report:read", "case:read", "case:update", "protocol:run", "analytics:read", "intervention:read", "referral:read", "institution:read", "adaptation:read", "training:read", "community:read", "reporting:read", "notification:read"],
+  UEPE: ["report:read", "case:read", "case:update", "protocol:run", "protocol:author", "analytics:read", "intervention:read", "referral:read", "institution:read", "adaptation:read", "training:read", "community:read", "reporting:read", "notification:read"],
   EMIR: ["case:read", "case:update", "protocol:run", "intervention:read", "referral:read", "institution:read", "notification:read"],
   FEDERAL: ["analytics:read", "audit:read", "reporting:read", "institution:read", "adaptation:read", "training:read", "community:read"],
   AUDITOR: ["case:read", "audit:read", "analytics:read", "reporting:read", "institution:read"],

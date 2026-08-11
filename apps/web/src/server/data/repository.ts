@@ -69,6 +69,7 @@ import {
   users
 } from "../db/schema";
 import { suggestSeverity } from "../domain/protocols";
+import { compileProtocolGraph, graphFromSteps, validateProtocolGraph, type ProtocolGraph } from "../domain/protocol-graph";
 import { evaluateMediation } from "../domain/mediation";
 import { isReferralOverdue } from "../domain/sla";
 import { validateDashboardWidgets } from "../domain/dashboards";
@@ -1747,6 +1748,133 @@ export async function createProtocolGovernanceRecord(input:
     })
     .returning({ id: protocolMigrations.publicId, status: protocolMigrations.status });
   return row;
+}
+
+// EP-04 / 7.x: el constructor visual de protocolos rechaza en servidor cualquier
+// grafo que no pase las mismas reglas que el editor aplica en cliente.
+export class ProtocolGraphInvalidError extends Error {
+  readonly errors: string[];
+  constructor(errors: string[]) {
+    super("PROTOCOL_GRAPH_INVALID");
+    this.name = "ProtocolGraphInvalidError";
+    this.errors = errors;
+  }
+}
+
+// Lista la ultima version publicada de cada codigo de protocolo, para poblar el
+// selector "abrir protocolo existente" del constructor.
+export async function listAuthoredProtocolVersions() {
+  if (!isDatabaseConfigured()) return [];
+  const db = getDb();
+  const rows = await db
+    .select({
+      code: protocolVersions.code,
+      title: protocolVersions.title,
+      version: protocolVersions.version,
+      active: protocolVersions.active,
+      steps: protocolVersions.steps,
+      updatedAt: protocolVersions.createdAt
+    })
+    .from(protocolVersions)
+    .orderBy(desc(protocolVersions.createdAt))
+    .limit(200);
+  const latest = new Map<string, (typeof rows)[number]>();
+  for (const row of rows) {
+    const current = latest.get(row.code);
+    if (!current || row.version > current.version) latest.set(row.code, row);
+  }
+  return [...latest.values()]
+    .map((row) => ({
+      code: row.code,
+      title: row.title,
+      version: row.version,
+      active: row.active,
+      stepCount: Array.isArray(row.steps) ? row.steps.length : 0,
+      updatedAt: toIso(row.updatedAt)
+    }))
+    .sort((a, b) => a.title.localeCompare(b.title));
+}
+
+// Reconstruye el grafo editable de la ultima version de un codigo.
+export async function getProtocolGraph(code: string): Promise<ProtocolGraph | null> {
+  if (!isDatabaseConfigured()) return null;
+  const db = getDb();
+  const [row] = await db
+    .select({ code: protocolVersions.code, title: protocolVersions.title, steps: protocolVersions.steps })
+    .from(protocolVersions)
+    .where(eq(protocolVersions.code, code))
+    .orderBy(desc(protocolVersions.version))
+    .limit(1);
+  if (!row) return null;
+  return graphFromSteps(row.code, row.title, Array.isArray(row.steps) ? row.steps : []);
+}
+
+// Publica una nueva version de protocolo a partir de un grafo del constructor.
+// Valida, compila a la lista lineal `steps[]`, incrementa la version del codigo,
+// desactiva las anteriores si se marca activa y deja rastro de auditoria.
+export async function saveProtocolVersionFromGraph(input: { graph: ProtocolGraph; actor: Actor; activate?: boolean }) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+
+  const validation = validateProtocolGraph(input.graph);
+  if (!validation.ok) throw new ProtocolGraphInvalidError(validation.errors);
+
+  const db = getDb();
+  const compiled = compileProtocolGraph(input.graph);
+  const activate = input.activate ?? true;
+
+  const previous = await db
+    .select({ version: protocolVersions.version })
+    .from(protocolVersions)
+    .where(eq(protocolVersions.code, input.graph.code))
+    .orderBy(desc(protocolVersions.version))
+    .limit(1);
+  const nextVersion = (previous[0]?.version ?? 0) + 1;
+
+  if (activate) {
+    await db
+      .update(protocolVersions)
+      .set({ active: false })
+      .where(eq(protocolVersions.code, input.graph.code));
+  }
+
+  const [created] = await db
+    .insert(protocolVersions)
+    .values({
+      code: input.graph.code,
+      version: nextVersion,
+      title: input.graph.title,
+      active: activate,
+      steps: compiled as Array<Record<string, unknown>>
+    })
+    .returning({
+      id: protocolVersions.id,
+      code: protocolVersions.code,
+      version: protocolVersions.version,
+      title: protocolVersions.title,
+      active: protocolVersions.active
+    });
+
+  await db.insert(auditEvents).values({
+    action: "protocol_version.publish",
+    resourceType: "protocol_version",
+    resourceId: created.code,
+    reason: "protocol_builder",
+    metadata: {
+      actorId: input.actor.id,
+      version: created.version,
+      stepCount: compiled.length,
+      warnings: validation.warnings
+    }
+  });
+
+  return {
+    code: created.code,
+    version: created.version,
+    title: created.title,
+    active: created.active,
+    stepCount: compiled.length,
+    warnings: validation.warnings
+  };
 }
 
 export async function createTrainingProgram(input: {

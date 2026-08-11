@@ -315,6 +315,29 @@ p {
   resize: vertical;
 }
 
+/* EP-04: constructor visual de protocolos */
+.protocol-builder .input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 11px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.protocol-builder .field-label {
+  display: block;
+  font-weight: 700;
+  font-size: 0.85rem;
+  margin-bottom: 4px;
+}
+
+@media (max-width: 900px) {
+  .protocol-builder {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
 .table-wrap {
   overflow-x: auto;
 }

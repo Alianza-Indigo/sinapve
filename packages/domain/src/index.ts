@@ -6,6 +6,7 @@ export * from "./inre";
 export * from "./mediation";
 export * from "./metrics";
 export * from "./protocols";
+export * from "./protocol-graph";
 export * from "./public-indicators";
 export * from "./sla";
 export * from "./types";

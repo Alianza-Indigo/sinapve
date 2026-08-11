@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 // filtren datos sin identidad y que las entradas invalidas se rechacen.
 
 test("las rutas de backoffice requieren identidad institucional", async ({ request }) => {
-  for (const path of ["/api/v1/reports", "/api/v1/modules/audit", "/api/v1/search?q=demo", "/api/v1/dashboards/demo", "/api/v1/realtime/stream"]) {
+  for (const path of ["/api/v1/reports", "/api/v1/modules/audit", "/api/v1/search?q=demo", "/api/v1/dashboards/demo", "/api/v1/realtime/stream", "/api/v1/protocols/versions"]) {
     const res = await request.get(path);
     expect(res.status(), `${path} deberia exigir identidad`).toBe(401);
   }
