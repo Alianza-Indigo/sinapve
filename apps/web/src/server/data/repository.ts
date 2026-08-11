@@ -3023,6 +3023,26 @@ export async function setContentPostStatus(input: { postId: string; status: "pub
   return { id: row.publicId, status: row.status };
 }
 
+// Elimina una publicación del portal (borrado permanente) con rastro de auditoría.
+export async function deleteContentPost(input: { postId: string; actor: Actor }) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const [row] = await db
+    .delete(contentPosts)
+    .where(eq(contentPosts.publicId, input.postId))
+    .returning({ publicId: contentPosts.publicId });
+  if (!row) throw new Error("CONTENT_POST_NOT_FOUND");
+
+  await db.insert(auditEvents).values({
+    action: "content_post.delete",
+    resourceType: "content_post",
+    resourceId: row.publicId,
+    reason: "content_publication",
+    metadata: { actorId: input.actor.id }
+  });
+  return { id: row.publicId };
+}
+
 // EP-01: baja de cuenta. Desactiva al usuario y revoca TODAS sus sesiones para
 // que ninguna cuenta desactivada conserve sesiones validas (6.1).
 export async function deactivateUser(input: { externalSubject: string; reason: string; actor: Actor }) {

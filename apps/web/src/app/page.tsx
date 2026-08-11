@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { PublicHeader } from "@/components/PublicHeader";
 import { PublicFooter } from "@/components/PublicFooter";
+import { NewsCarousel } from "@/components/NewsCarousel";
 import { listPublishedPosts, type PublicPost } from "@/server/data/repository";
 
 export const dynamic = "force-dynamic";
@@ -38,45 +39,8 @@ const audiences = [
   { icon: Building2, title: "Comunidad", text: "Participa en iniciativas por la convivencia escolar." }
 ];
 
-function formatDate(iso: string | null) {
-  if (!iso) return "";
-  try {
-    return new Intl.DateTimeFormat("es-MX", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(iso));
-  } catch {
-    return iso.slice(0, 10);
-  }
-}
-
-function PostCard({ post }: { post: PublicPost }) {
-  const href = post.kind === "recurso" && post.externalUrl ? post.externalUrl : `/noticias/${post.slug}`;
-  const isExternal = post.kind === "recurso" && Boolean(post.externalUrl);
-  const cta = post.kind === "recurso" ? "Descargar" : "Leer más";
-  return (
-    <article className="news-card">
-      <div className="news-cover">{post.coverImagePath ? <img src={post.coverImagePath} alt="" /> : null}</div>
-      <div className="news-body">
-        <div className="news-meta">
-          <span className="news-tag">{post.tag ?? post.kind}</span>
-          <span className="news-date">{formatDate(post.publishedAt)}</span>
-        </div>
-        <h3>{post.title}</h3>
-        <p>{post.summary}</p>
-        {isExternal ? (
-          <a className="news-link" href={href} target="_blank" rel="noreferrer noopener">
-            {cta} <ArrowRight size={15} aria-hidden="true" />
-          </a>
-        ) : (
-          <Link className="news-link" href={href}>
-            {cta} <ArrowRight size={15} aria-hidden="true" />
-          </Link>
-        )}
-      </div>
-    </article>
-  );
-}
-
 export default async function HomePage() {
-  const posts = await listPublishedPosts(3).catch(() => [] as PublicPost[]);
+  const posts = await listPublishedPosts(12).catch(() => [] as PublicPost[]);
 
   return (
     <div className="page-shell">
@@ -145,15 +109,7 @@ export default async function HomePage() {
             <h2 id="reciente-title">Lo más reciente</h2>
             <Link className="link-more" href="/noticias">Ver todas las noticias <ArrowRight size={15} aria-hidden="true" /></Link>
           </div>
-          {posts.length > 0 ? (
-            <div className="news-grid">
-              {posts.map((post) => (
-                <PostCard key={post.id} post={post} />
-              ))}
-            </div>
-          ) : (
-            <p className="muted">Aún no hay publicaciones. Las noticias, comunicados y recursos aparecerán aquí una vez publicados.</p>
-          )}
+          <NewsCarousel posts={posts} />
         </section>
 
         <section className="landing">

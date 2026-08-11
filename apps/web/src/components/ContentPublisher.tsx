@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff, Send } from "lucide-react";
+import { Eye, EyeOff, Send, Trash2 } from "lucide-react";
 
 type AdminPost = {
   id: string;
@@ -79,6 +79,17 @@ export function ContentPublisher({ initialPosts }: { initialPosts: AdminPost[] }
     }
   };
 
+  const removePost = async (post: AdminPost) => {
+    if (!window.confirm(`¿Eliminar definitivamente "${post.title}"? Esta acción no se puede deshacer.`)) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/v1/content/posts/${post.id}`, { method: "DELETE" });
+      if (res.ok) router.refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div>
       <form className="form" onSubmit={submit}>
@@ -147,9 +158,14 @@ export function ContentPublisher({ initialPosts }: { initialPosts: AdminPost[] }
                   </td>
                   <td className="muted">{post.updatedAt?.slice(0, 10)}</td>
                   <td>
-                    <button className="button" type="button" onClick={() => toggleStatus(post)} disabled={busy}>
-                      {post.status === "publicado" ? <><EyeOff size={14} aria-hidden="true" /> Retirar</> : <><Eye size={14} aria-hidden="true" /> Publicar</>}
-                    </button>
+                    <div className="status-row" style={{ gap: 6 }}>
+                      <button className="button" type="button" onClick={() => toggleStatus(post)} disabled={busy}>
+                        {post.status === "publicado" ? <><EyeOff size={14} aria-hidden="true" /> Retirar</> : <><Eye size={14} aria-hidden="true" /> Publicar</>}
+                      </button>
+                      <button className="button" type="button" onClick={() => removePost(post)} disabled={busy} aria-label={`Eliminar ${post.title}`} style={{ color: "var(--red)", borderColor: "rgba(201,54,62,0.3)" }}>
+                        <Trash2 size={14} aria-hidden="true" /> Eliminar
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
