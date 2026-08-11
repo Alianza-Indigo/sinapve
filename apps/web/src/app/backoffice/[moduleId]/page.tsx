@@ -2,7 +2,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Lock } from "lucide-react";
-import { Topbar } from "@/components/Topbar";
+import { BackofficeTopbar } from "@/components/BackofficeTopbar";
 import { ModuleCreateForm } from "@/components/ModuleCreateForm";
 import { ModuleRecordsTable } from "@/components/ModuleRecordsTable";
 import { KpiCard } from "@/components/KpiCard";
@@ -49,7 +49,7 @@ export default async function BackofficeModulePage({ params }: { params: Promise
   if (!actor || !canReadModule(actor, moduleId)) {
     return (
       <div className="page-shell">
-        <Topbar />
+        <BackofficeTopbar />
         <main className="section">
           <Link className="button" href="/backoffice">
             <ArrowLeft size={18} aria-hidden="true" />
@@ -88,7 +88,7 @@ export default async function BackofficeModulePage({ params }: { params: Promise
 
   return (
     <div className="page-shell">
-      <Topbar />
+      <BackofficeTopbar />
       <main className="section">
         <Link className="button" href="/backoffice">
           <ArrowLeft size={18} aria-hidden="true" />

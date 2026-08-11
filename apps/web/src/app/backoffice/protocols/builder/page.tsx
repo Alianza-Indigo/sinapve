@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { headers } from "next/headers";
 import { ArrowLeft, Lock } from "lucide-react";
-import { Topbar } from "@/components/Topbar";
+import { BackofficeTopbar } from "@/components/BackofficeTopbar";
 import { ProtocolBuilder } from "@/components/ProtocolBuilder";
 import { ProtocolVersionActions } from "@/components/ProtocolVersionActions";
 import { resolveActor } from "@/server/auth/session-actor";
@@ -15,7 +15,7 @@ export default async function ProtocolBuilderPage({ searchParams }: { searchPara
   if (!actor || !hasCapability(actor, "protocol:author")) {
     return (
       <div className="page-shell">
-        <Topbar />
+        <BackofficeTopbar />
         <main className="section">
           <Link className="button" href="/backoffice">
             <ArrowLeft size={18} aria-hidden="true" />
@@ -50,7 +50,7 @@ export default async function ProtocolBuilderPage({ searchParams }: { searchPara
 
   return (
     <div className="page-shell">
-      <Topbar />
+      <BackofficeTopbar />
       <main className="section">
         <Link className="button" href="/backoffice/protocols">
           <ArrowLeft size={18} aria-hidden="true" />

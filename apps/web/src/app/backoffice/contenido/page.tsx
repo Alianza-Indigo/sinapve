@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { headers } from "next/headers";
 import { ArrowLeft, Lock } from "lucide-react";
-import { Topbar } from "@/components/Topbar";
+import { BackofficeTopbar } from "@/components/BackofficeTopbar";
 import { ContentPublisher } from "@/components/ContentPublisher";
 import { resolveActor } from "@/server/auth/session-actor";
 import { listContentPostsForAdmin } from "@/server/data/repository";
@@ -14,7 +14,7 @@ export default async function ContentAdminPage() {
   if (!actor || !hasCapability(actor, "content:publish")) {
     return (
       <div className="page-shell">
-        <Topbar />
+        <BackofficeTopbar />
         <main className="section">
           <Link className="button" href="/backoffice">
             <ArrowLeft size={18} aria-hidden="true" /> Regresar
@@ -39,7 +39,7 @@ export default async function ContentAdminPage() {
 
   return (
     <div className="page-shell">
-      <Topbar />
+      <BackofficeTopbar />
       <main className="section">
         <Link className="button" href="/backoffice">
           <ArrowLeft size={18} aria-hidden="true" /> Regresar

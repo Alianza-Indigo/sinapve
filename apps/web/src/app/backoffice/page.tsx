@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { headers } from "next/headers";
 import { FileText, Lock, LogOut } from "lucide-react";
-import { Topbar } from "@/components/Topbar";
+import { BackofficeTopbar } from "@/components/BackofficeTopbar";
 import { DashboardTopbar } from "@/components/DashboardTopbar";
 import { RoleDashboard } from "@/components/RoleDashboard";
 import { resolveActor } from "@/server/auth/session-actor";
@@ -26,7 +26,7 @@ export default async function BackofficePage({ searchParams }: { searchParams: P
   if (!actor || !canUseBackoffice) {
     return (
       <div className="page-shell">
-        <Topbar />
+        <BackofficeTopbar />
         <main className="section">
           <section className="panel">
             <p className="eyebrow">Acceso requerido</p>

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Clock, Lock, ShieldCheck } from "lucide-react";
-import { Topbar } from "@/components/Topbar";
+import { BackofficeTopbar } from "@/components/BackofficeTopbar";
 import { CaseTimeline } from "@/components/CaseTimeline";
 import { ProtocolRunConsole } from "@/components/ProtocolRunConsole";
 import { resolveActor } from "@/server/auth/session-actor";
@@ -16,7 +16,7 @@ export default async function CasePage({ params }: { params: Promise<{ caseId: s
   if (!actor) {
     return (
       <div className="page-shell">
-        <Topbar />
+        <BackofficeTopbar />
         <main className="section">
           <Link className="button" href="/backoffice">
             <ArrowLeft size={18} aria-hidden="true" />
@@ -48,7 +48,7 @@ export default async function CasePage({ params }: { params: Promise<{ caseId: s
     if (error instanceof DatabaseNotConfiguredError) {
       return (
         <div className="page-shell">
-          <Topbar />
+          <BackofficeTopbar />
           <main className="section">
             <Link className="button" href="/backoffice">
               <ArrowLeft size={18} aria-hidden="true" />
@@ -76,7 +76,7 @@ export default async function CasePage({ params }: { params: Promise<{ caseId: s
 
   return (
     <div className="page-shell">
-      <Topbar />
+      <BackofficeTopbar />
       <main className="section">
         <Link className="button" href="/backoffice">
           <ArrowLeft size={18} aria-hidden="true" />
