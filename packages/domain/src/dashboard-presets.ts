@@ -203,7 +203,8 @@ export function presetForRoles(roles: Role[]): DashboardPreset {
 // ---------------------------------------------------------------------------
 
 export type KpiTone = "default" | "critical" | "warn" | "safe";
-export type ResolvedKpi = { key: DashboardKpiKey; label: string; display: string; hint?: string; tone: KpiTone };
+export type KpiDelta = { pct: number; direction: "up" | "down" };
+export type ResolvedKpi = { key: DashboardKpiKey; label: string; display: string; hint?: string; tone: KpiTone; delta?: KpiDelta };
 
 export type DashboardContext = { actor: Actor; cases: CaseFile[]; reports: HelpReport[]; widgets: MetricWidget[] };
 
@@ -238,14 +239,29 @@ const activeCases = (cases: CaseFile[]) => cases.filter((c) => c.state !== "cerr
 const criticalCases = (cases: CaseFile[]) => cases.filter((c) => c.severity === "critica");
 const slaAtRisk = (cases: CaseFile[]) => activeCases(cases).filter((c) => c.firstResponseMinutes >= c.slaMinutes);
 
-function reportsThisMonth(reports: HelpReport[]) {
-  const now = new Date();
-  const y = now.getUTCFullYear();
-  const m = now.getUTCMonth();
+function reportsInMonth(reports: HelpReport[], year: number, month: number) {
   return reports.filter((r) => {
     const d = new Date(r.createdAt);
-    return d.getUTCFullYear() === y && d.getUTCMonth() === m;
+    return d.getUTCFullYear() === year && d.getUTCMonth() === month;
   }).length;
+}
+
+function reportsThisMonth(reports: HelpReport[]) {
+  const now = new Date();
+  return reportsInMonth(reports, now.getUTCFullYear(), now.getUTCMonth());
+}
+
+// Delta mes-contra-mes REAL de reportes (única serie temporal disponible sin
+// histórico adicional). No se inventan deltas para otros KPIs.
+function reportsMonthDelta(reports: HelpReport[]): KpiDelta | undefined {
+  const now = new Date();
+  const current = reportsInMonth(reports, now.getUTCFullYear(), now.getUTCMonth());
+  const prev = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  const previous = reportsInMonth(reports, prev.getUTCFullYear(), prev.getUTCMonth());
+  if (previous === 0) return undefined;
+  const pct = Math.round(((current - previous) / previous) * 100);
+  if (pct === 0) return undefined;
+  return { pct: Math.abs(pct), direction: pct >= 0 ? "up" : "down" };
 }
 
 function inreIndex(ctx: DashboardContext) {
@@ -303,7 +319,7 @@ export function resolveKpi(key: DashboardKpiKey, ctx: DashboardContext): Resolve
       return { key, label, display: String(v), hint: level, tone: inreTone(v) };
     }
     case "reportes_mes":
-      return { key, label, display: String(reportsThisMonth(ctx.reports)), tone: "default" };
+      return { key, label, display: String(reportsThisMonth(ctx.reports)), tone: "default", delta: reportsMonthDelta(ctx.reports) };
     case "escuelas_alcance":
     case "escuelas_evaluadas": {
       const n = distinctCount([...ctx.cases, ...ctx.reports], (item) => item.organizationId);

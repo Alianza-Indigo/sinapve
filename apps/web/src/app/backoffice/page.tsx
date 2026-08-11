@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { headers } from "next/headers";
-import { FileText, Lock } from "lucide-react";
+import { FileText, Lock, LogOut } from "lucide-react";
 import { Topbar } from "@/components/Topbar";
-import { RealtimeBadge } from "@/components/RealtimeBadge";
+import { DashboardTopbar } from "@/components/DashboardTopbar";
 import { RoleDashboard } from "@/components/RoleDashboard";
 import { resolveActor } from "@/server/auth/session-actor";
 import { isAuthEnabled, signOut } from "@/server/auth/oidc";
-import { getDashboardModel, getLiveDataStatus } from "@/server/data/repository";
+import { getDashboardModel, getRealtimeCounts } from "@/server/data/repository";
 import { hasCapability } from "@/server/domain/access";
 
 export const dynamic = "force-dynamic";
@@ -48,34 +48,31 @@ export default async function BackofficePage() {
     );
   }
 
-  const [model, liveStatus] = await Promise.all([getDashboardModel(actor), getLiveDataStatus()]);
+  const [model, counts] = await Promise.all([
+    getDashboardModel(actor),
+    getRealtimeCounts().catch(() => ({ pendingNotifications: 0, overdueReferrals: 0, pendingJobs: 0, criticalCases: 0 }))
+  ]);
 
   return (
-    <div className="page-shell">
-      <Topbar />
-      <main className="section">
-        <div className="toolbar" style={{ justifyContent: "space-between" }}>
-          <div>
-            <p className="eyebrow">Centro de mando</p>
-            <h1 style={{ fontSize: "clamp(1.8rem, 4vw, 2.8rem)" }}>Sistema de Dashboards SINAPVE</h1>
-            <p className="lead" style={{ fontSize: "1rem" }}>
-              {liveStatus.databaseConfigured
-                ? "Un solo template; los datos cambian según tu rol y alcance."
-                : "La base de datos no está enlazada en este entorno. El panel no muestra datos inventados."}
-            </p>
-            <RealtimeBadge />
-          </div>
-          <div className="status-row">
+    <div className="page-shell dash-shell">
+      <DashboardTopbar name={actor.name} roleLabel={model.preset.label} notifCount={counts.pendingNotifications} />
+      <main className="dash-main">
+        <div className="dash-actions">
+          {!model.databaseConfigured ? (
+            <span className="status-pill">La base no está enlazada · el panel no inventa datos</span>
+          ) : (
+            <span />
+          )}
+          <div className="status-row" style={{ gap: 8 }}>
             {hasCapability(actor, "content:publish") ? (
               <Link className="button" href="/backoffice/contenido">
-                <FileText size={18} aria-hidden="true" />
-                Publicaciones
+                <FileText size={16} aria-hidden="true" /> Publicaciones
               </Link>
             ) : null}
             {isAuthEnabled() ? (
               <form action={signOutAction}>
                 <button className="button" type="submit">
-                  Salir
+                  <LogOut size={16} aria-hidden="true" /> Salir
                 </button>
               </form>
             ) : null}

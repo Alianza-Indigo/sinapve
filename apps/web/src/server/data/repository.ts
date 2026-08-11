@@ -2832,13 +2832,15 @@ export async function getDashboardModel(actor: Actor) {
   const selected = preset.widgetIds
     .map((id) => widgets.find((widget) => widget.id === id))
     .filter((widget): widget is (typeof widgets)[number] => Boolean(widget));
+  const scopeLabel = actor.scope.organizationId ?? actor.scope.stateCode ?? "Alcance completo";
   return {
     preset,
     kpis: resolveKpis(preset, ctx),
     panels: buildDashboardPanels(preset, ctx),
     widgets: selected,
     updatedAt: toIso(new Date()),
-    databaseConfigured: isDatabaseConfigured()
+    databaseConfigured: isDatabaseConfigured(),
+    scopeLabel
   };
 }
 
