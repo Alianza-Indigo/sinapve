@@ -5,11 +5,17 @@ import { Topbar } from "@/components/Topbar";
 import { KpiCard } from "@/components/KpiCard";
 import { ReportQueue } from "@/components/ReportQueue";
 import { resolveActor } from "@/server/auth/session-actor";
+import { isAuthEnabled, signOut } from "@/server/auth/oidc";
 import { getLiveDataStatus, listCases, listPlatformModules, listReports } from "@/server/data/repository";
 import { canReadCase, canReadModule, canReadReport, hasCapability } from "@/server/domain/access";
 import { buildCertifiedWidgets } from "@/server/domain/metrics";
 
 export const dynamic = "force-dynamic";
+
+async function signOutAction() {
+  "use server";
+  await signOut({ redirectTo: "/" });
+}
 
 export default async function BackofficePage() {
   const actor = await resolveActor(await headers());
@@ -27,6 +33,11 @@ export default async function BackofficePage() {
                 <Lock size={16} aria-hidden="true" />
                 Sin permiso efectivo
               </span>
+            </div>
+            <div className="hero-actions">
+              <Link className="button primary" href="/login">
+                Ingresar
+              </Link>
             </div>
           </section>
         </main>
@@ -61,12 +72,21 @@ export default async function BackofficePage() {
                 : "La base de datos no esta enlazada en este entorno. La plataforma no muestra datos inventados."}
             </p>
           </div>
-          {firstCase ? (
-            <Link className="button primary" href={`/backoffice/cases/${firstCase.id}`}>
-              <FileText size={18} aria-hidden="true" />
-              Abrir expediente
-            </Link>
-          ) : null}
+          <div className="status-row">
+            {firstCase ? (
+              <Link className="button primary" href={`/backoffice/cases/${firstCase.id}`}>
+                <FileText size={18} aria-hidden="true" />
+                Abrir expediente
+              </Link>
+            ) : null}
+            {isAuthEnabled() ? (
+              <form action={signOutAction}>
+                <button className="button" type="submit">
+                  Salir
+                </button>
+              </form>
+            ) : null}
+          </div>
         </div>
 
         <section className="widget-grid" aria-label="Indicadores certificados">

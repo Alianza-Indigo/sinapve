@@ -58,6 +58,30 @@ Del proveedor de identidad institucional (registro de la aplicación cliente).
 | `SINAPVE_OIDC_CLIENT_SECRET` | Secreto de cliente que emite el IdP |
 | `SINAPVE_OIDC_SCOPE` | `openid profile email` (ajuste según claims institucionales) |
 
+### Login admin interino (sin IdP externo)
+
+Para entrar a la consola antes de enlazar el IdP, configure un admin bootstrap:
+
+| Variable | Formato / ejemplo |
+|---|---|
+| `AUTH_SECRET` | requerido (ver sección B) |
+| `SINAPVE_ADMIN_EMAIL` | `admin@institucion.gob.mx` |
+| `SINAPVE_ADMIN_PASSWORD_HASH` | hash scrypt de la contraseña (nunca texto plano) |
+| `SINAPVE_ADMIN_ROLES` | roles separados por coma; incluya uno con `analytics:read` (p. ej. `FEDERAL`) |
+| `SINAPVE_ADMIN_NAME` | nombre visible (opcional) |
+| `SINAPVE_ADMIN_ORG` | `public_id` de organización para acotar alcance (opcional) |
+
+Genere el hash (localmente, no comitee la contraseña):
+
+```bash
+corepack pnpm --filter @sinapve/web admin:hash 'TU_CLAVE_FUERTE'
+# → scrypt:<salt>:<hash>  ← péguelo en SINAPVE_ADMIN_PASSWORD_HASH
+```
+
+Luego inicie sesión en `https://TU-DOMINIO/login`. Es una vía temporal; cuando
+enlace OIDC, el login institucional aparece automáticamente y puede retirar el
+admin bootstrap.
+
 > Callback a registrar en el IdP: `https://TU-DOMINIO/api/auth/callback/sinapve-oidc`.
 > El IdP debe emitir los claims `sinapve_roles` y `sinapve_organization_id`
 > (y `sinapve_state_code`, `sinapve_municipality_code`, `sinapve_school_id`,

@@ -65,6 +65,11 @@ export default async function BackofficeModulePage({ params }: { params: Promise
                 Sin permiso efectivo
               </span>
             </div>
+            <div className="hero-actions">
+              <Link className="button primary" href="/login">
+                Ingresar
+              </Link>
+            </div>
           </section>
         </main>
       </div>

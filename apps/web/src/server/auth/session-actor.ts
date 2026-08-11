@@ -1,6 +1,6 @@
 import type { Actor } from "../domain/types";
 import { getActorFromHeaders } from "./current-actor";
-import { auth, isOidcConfigured } from "./oidc";
+import { auth, isAuthEnabled } from "./oidc";
 import { mapClaimsToActor, type OidcClaims } from "./oidc-claims";
 
 // EP-01: resolutor unificado de identidad. Prioriza una sesion OIDC/SAML valida
@@ -9,7 +9,7 @@ import { mapClaimsToActor, type OidcClaims } from "./oidc-claims";
 // logica en cada ruta o pagina.
 
 export async function getSessionActor(): Promise<Actor | null> {
-  if (!isOidcConfigured()) return null;
+  if (!isAuthEnabled()) return null;
   const session = await auth();
   const claims = (session as unknown as { sinapve?: OidcClaims })?.sinapve;
   if (!claims) return null;
