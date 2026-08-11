@@ -24,12 +24,13 @@ describe("private blob storage policy", () => {
       },
       12,
       "sha256",
-      "not_applicable"
+      "not_applicable",
+      "passed_heuristic"
     );
 
     expect(metadata.deliveryPath).toBe("/api/v1/cases/case_001/evidence?pathname=cases%2Fcase_001%2Fevidence%2F2026-08-10%2Fa.pdf");
     expect(metadata.sha256).toBe("sha256");
-    expect(metadata.scanStatus).toBe("passed");
+    expect(metadata.scanStatus).toBe("passed_heuristic");
     expect(metadata).not.toHaveProperty("url");
     expect(metadata).not.toHaveProperty("downloadUrl");
   });

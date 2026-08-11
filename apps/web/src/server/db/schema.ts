@@ -1,5 +1,13 @@
-import { boolean, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { boolean, customType, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import type { CaseState, ReportMode, Severity } from "../domain/types";
+
+// EP / 9.2: tipo geoespacial PostGIS. Punto en SRID 4326 (WGS84). Se acepta EWKT
+// (`SRID=4326;POINT(lng lat)`) como valor de entrada.
+export const geometryPoint = customType<{ data: string; driverData: string }>({
+  dataType() {
+    return "geometry(Point, 4326)";
+  }
+});
 
 export const organizationType = pgEnum("organization_type", ["federal", "state", "municipality", "zone", "school"]);
 export const reportMode = pgEnum("report_mode", ["anonimo", "confidencial", "identificado"]);
@@ -1111,6 +1119,25 @@ export const approvedDocuments = pgTable(
   (table) => ({
     docTypeIdx: index("approved_documents_doc_type_idx").on(table.docType),
     activeIdx: index("approved_documents_active_idx").on(table.active)
+  })
+);
+
+// EP / 9.2: puntos territoriales geolocalizados (recursos, planteles, despachos)
+// con geometria PostGIS para consultas de proximidad e indices espaciales.
+export const territorialPoints = pgTable(
+  "territorial_points",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    organizationId: uuid("organization_id").references(() => organizations.id),
+    label: text("label").notNull(),
+    kind: text("kind").notNull(),
+    location: geometryPoint("location").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    kindIdx: index("territorial_points_kind_idx").on(table.kind),
+    organizationIdx: index("territorial_points_organization_idx").on(table.organizationId)
   })
 );
 

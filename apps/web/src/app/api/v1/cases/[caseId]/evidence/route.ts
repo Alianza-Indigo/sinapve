@@ -3,7 +3,7 @@ import { resolveActor } from "@/server/auth/session-actor";
 import { getCase, recordCaseEvidence } from "@/server/data/repository";
 import { DatabaseNotConfiguredError } from "@/server/db";
 import { canReadCase, hasCapability } from "@/server/domain/access";
-import { EvidenceBlobValidationError, PrivateBlobNotConfiguredError, readPrivateEvidenceBlob, uploadPrivateEvidenceBlob } from "@/server/storage/private-blob";
+import { EvidenceBlobValidationError, MalwareDetectedError, PrivateBlobNotConfiguredError, readPrivateEvidenceBlob, uploadPrivateEvidenceBlob } from "@/server/storage/private-blob";
 
 export const runtime = "nodejs";
 
@@ -72,6 +72,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
 
     if (error instanceof EvidenceBlobValidationError) {
       return Response.json({ error: "invalid_evidence_file", message: error.message }, { status: 400 });
+    }
+
+    if (error instanceof MalwareDetectedError) {
+      return Response.json({ error: "malware_detected", message: error.message }, { status: 422 });
     }
 
     throw error;

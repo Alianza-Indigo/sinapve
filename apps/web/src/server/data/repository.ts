@@ -1,5 +1,5 @@
 import { nanoid } from "nanoid";
-import { and, desc, eq, isNull, or } from "drizzle-orm";
+import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
 import { DatabaseNotConfiguredError, getDb, isDatabaseConfigured } from "../db";
 import { decryptSensitiveText, encryptSensitiveText, sha256Digest } from "../security/field-crypto";
 import {
@@ -53,6 +53,7 @@ import {
   reports,
   retentionPolicies,
   systemConfigurations,
+  territorialPoints,
   trainingAssessments,
   trainingCohorts,
   trainingEnrollments,
@@ -71,6 +72,8 @@ import { canReadCase, canReadReport } from "../domain/access";
 import { enqueueJob, claimDueJobs, completeJob, failJob } from "./jobs";
 import { rankDocuments, extractiveSnippet } from "../ai/rag";
 import { callAiGateway, isAiConfigured } from "../ai/gateway";
+import { containsSensitiveDetail, shouldDeliver, type NotificationPriority } from "../notifications/policy";
+import { dispatchToChannel, type NotificationChannel } from "../notifications/dispatch";
 import type { Actor, CaseFile, CaseState, CaseTimelineEvent, HelpReport, PlatformModuleId, PlatformModuleSummary, PlatformRecord, ReportMode, Severity } from "../domain/types";
 
 export type LiveDataStatus = {
@@ -3181,6 +3184,144 @@ export async function generateReportDraft(input: {
     narrative,
     actor: input.actor
   });
+}
+
+// EP / 14: crea y despacha una notificacion multicanal honrando la politica de
+// prioridad, horario silencioso y override critico. Solo viaja el resumen
+// seguro; se rechaza cualquier detalle sensible.
+export async function createAndDispatchNotification(input: {
+  safeSummary: string;
+  priority: NotificationPriority;
+  channels: NotificationChannel[];
+  caseId?: string;
+  userExternalSubject?: string;
+  quietHours?: { start?: string; end?: string };
+  nowMinutes?: number;
+  actor: Actor;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  if (containsSensitiveDetail(input.safeSummary)) throw new Error("SENSITIVE_DETAIL_IN_NOTIFICATION");
+
+  const db = getDb();
+  const caseRow = input.caseId ? await findCaseRow(input.caseId) : null;
+  const user = input.userExternalSubject ? await findUserRow(input.userExternalSubject) : null;
+  const now = new Date();
+  const nowMinutes = input.nowMinutes ?? now.getHours() * 60 + now.getMinutes();
+
+  const deliveries = [];
+  for (const channel of input.channels) {
+    const decision = shouldDeliver({ priority: input.priority, quietHours: input.quietHours, nowMinutes });
+    if (!decision.deliver) {
+      deliveries.push({ channel, status: "deferred", reason: decision.reason });
+      continue;
+    }
+    const delivery = await dispatchToChannel(channel, { safeSummary: input.safeSummary, priority: input.priority });
+    deliveries.push({ ...delivery, reason: decision.reason });
+  }
+
+  const [row] = await db
+    .insert(notifications)
+    .values({
+      publicId: `ntf_${nanoid(10)}`,
+      caseId: caseRow?.id,
+      userId: user?.id,
+      priority: input.priority,
+      channel: input.channels.join(","),
+      safeSummary: input.safeSummary,
+      status: deliveries.some((d) => d.status === "delivered" || d.status === "queued_provider") ? "enviada" : "pendiente"
+    })
+    .returning({ publicId: notifications.publicId, status: notifications.status });
+
+  await db.insert(auditEvents).values({
+    action: "notification.dispatch",
+    resourceType: "notification",
+    resourceId: row.publicId,
+    reason: "multichannel_dispatch",
+    metadata: { actorId: input.actor.id, priority: input.priority, deliveries }
+  });
+  return { id: row.publicId, status: row.status, deliveries };
+}
+
+// EP / 9.2: alta de punto territorial geolocalizado (PostGIS). La geometria se
+// envia como EWKT y se almacena como geometry(Point, 4326).
+export async function createTerritorialPoint(input: {
+  label: string;
+  kind: string;
+  lat: number;
+  lng: number;
+  organizationPublicId?: string;
+  actor: Actor;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const organization = input.organizationPublicId ? await findOrganizationRow(input.organizationPublicId) : null;
+  if (input.organizationPublicId && !organization) throw new Error("ORGANIZATION_NOT_FOUND");
+  const publicId = `geo_${nanoid(10)}`;
+  const [row] = await db
+    .insert(territorialPoints)
+    .values({
+      publicId,
+      organizationId: organization?.id,
+      label: input.label,
+      kind: input.kind,
+      location: `SRID=4326;POINT(${input.lng} ${input.lat})`
+    })
+    .returning({ publicId: territorialPoints.publicId, kind: territorialPoints.kind });
+  await db.insert(auditEvents).values({
+    action: "territorial_point.create",
+    resourceType: "territorial_point",
+    resourceId: row.publicId,
+    reason: "geospatial_resource",
+    metadata: { actorId: input.actor.id, kind: input.kind }
+  });
+  return { id: row.publicId, kind: row.kind };
+}
+
+// Puntos dentro de un radio (metros) usando ST_DWithin sobre geography, con el
+// indice espacial GIST. Devuelve distancia en metros.
+export async function findNearbyTerritorialPoints(input: { lat: number; lng: number; radiusMeters: number; kind?: string }) {
+  if (!isDatabaseConfigured()) return [];
+  const db = getDb();
+  const origin = sql`ST_SetSRID(ST_MakePoint(${input.lng}, ${input.lat}), 4326)::geography`;
+  const conditions = [sql`ST_DWithin(${territorialPoints.location}::geography, ${origin}, ${input.radiusMeters})`];
+  if (input.kind) conditions.push(sql`${territorialPoints.kind} = ${input.kind}`);
+  const rows = await db
+    .select({
+      id: territorialPoints.publicId,
+      label: territorialPoints.label,
+      kind: territorialPoints.kind,
+      distanceMeters: sql<number>`ST_Distance(${territorialPoints.location}::geography, ${origin})`
+    })
+    .from(territorialPoints)
+    .where(sql.join(conditions, sql` AND `))
+    .orderBy(sql`ST_Distance(${territorialPoints.location}::geography, ${origin})`)
+    .limit(50);
+  return rows.map((row) => ({ ...row, distanceMeters: Math.round(Number(row.distanceMeters)) }));
+}
+
+// EP-14: datos de un informe para render (PDF/HTML), con narrativa descifrada.
+export async function getGeneratedReportForRender(reportId: string) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const [report] = await db
+    .select({
+      title: generatedReports.title,
+      reportType: generatedReports.reportType,
+      status: generatedReports.status,
+      narrative: generatedReports.narrativeCiphertext,
+      createdAt: generatedReports.createdAt
+    })
+    .from(generatedReports)
+    .where(eq(generatedReports.publicId, reportId))
+    .limit(1);
+  if (!report) return null;
+  return {
+    title: report.title,
+    reportType: report.reportType,
+    status: report.status,
+    narrative: decryptSensitiveText(report.narrative) || "Sin narrativa registrada.",
+    generatedAt: toIso(report.createdAt)
+  };
 }
 
 // EP-09: alta de documento en la base aprobada para el asistente RAG.

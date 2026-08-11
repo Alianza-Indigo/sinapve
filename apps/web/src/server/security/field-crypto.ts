@@ -35,6 +35,7 @@ export function decryptSensitiveText(value: string | null | undefined) {
   return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
 }
 
-export function sha256Digest(value: ArrayBuffer | string) {
-  return createHash("sha256").update(typeof value === "string" ? value : Buffer.from(value)).digest("hex");
+export function sha256Digest(value: ArrayBuffer | Uint8Array | string) {
+  const data = typeof value === "string" ? value : Buffer.from(value as Uint8Array);
+  return createHash("sha256").update(data).digest("hex");
 }
