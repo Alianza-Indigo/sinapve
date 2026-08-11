@@ -587,10 +587,12 @@ th {
   width: 100%; aspect-ratio: 4/3; object-fit: cover; border-radius: 24px;
   background: linear-gradient(135deg, var(--indigo), var(--violet));
 }
-/* Foto del hero: coloca tu imagen con licencia en public/brand/hero.jpg y
-   aparece aquí automáticamente; si no existe, se muestra el degradado. */
+/* Foto del hero: coloca tu imagen con licencia en public/brand/hero.jpg o
+   public/brand/hero.png y aparece aquí automáticamente; si no existe, se
+   muestra el degradado de marca. La primera que exista se pinta encima. */
 .hero-media .hero-ph {
   background: url("/brand/hero.jpg") center / cover no-repeat,
+    url("/brand/hero.png") center / cover no-repeat,
     linear-gradient(135deg, var(--indigo), var(--violet));
 }
 .btn-lg { padding: 14px 22px; border-radius: 12px; font-weight: 700; font-size: 1rem; text-decoration: none; display: inline-flex; align-items: center; gap: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
