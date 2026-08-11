@@ -15,6 +15,16 @@ Esta entrega deja una base operativa alineada al PRD:
 - Cron diario para revision SLA.
 - RBAC + ABAC de servidor mediante identidad institucional verificada por headers.
 
+## Estructura del monorepo
+
+- `apps/web` — aplicacion Next.js (App Router), rutas API y UI.
+- `packages/domain` (`@sinapve/domain`) — logica de dominio pura y testeable
+  (tipos, acceso RBAC/ABAC, protocolos, metricas certificadas, INRE, mediacion,
+  SLA, indicadores publicos). La app la consume via alias `@sinapve/domain/*`.
+- `analytics/dbt` — capa semantica de metricas certificadas (dbt) espejo de
+  `certified-metrics`.
+- `infra/` — recursos administrados de Vercel, ambientes y estrategia de datos.
+
 ## Desarrollo local
 
 ```bash

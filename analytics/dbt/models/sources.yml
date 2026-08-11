@@ -1,0 +1,16 @@
+version: 2
+
+# Fuentes: tablas transaccionales gestionadas por Drizzle (ver
+# apps/web/src/server/db/schema.ts). dbt solo lee; nunca escribe en operacion.
+sources:
+  - name: sinapve
+    schema: public
+    tables:
+      - name: reports
+      - name: cases
+      - name: referrals
+      - name: protocol_runs
+      - name: protocol_step_events
+      - name: training_enrollments
+      - name: organizations
+      - name: case_events

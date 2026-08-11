@@ -100,6 +100,12 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@22.20.1)(jiti@1.21.7)(tsx@4.23.12)
 
+  packages/domain:
+    dependencies:
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+
 packages:
 
   '@alloc/quick-lru@5.2.0':

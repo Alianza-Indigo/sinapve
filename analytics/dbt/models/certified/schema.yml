@@ -1,0 +1,30 @@
+version: 2
+
+# Contrato de la capa semantica: cada metrica certificada expone metric_code,
+# metric_version y value. La version debe coincidir con
+# packages/domain/src/certified-metrics.ts. Un cambio de formula exige nueva
+# version, pruebas y fecha efectiva (8.6).
+models:
+  - name: cumplimiento_sla
+    description: "Porcentaje de casos con primera respuesta dentro del SLA."
+    columns:
+      - name: metric_code
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+      - name: value
+        tests: [not_null]
+  - name: escalamiento_efectivo
+    description: "Referencias con acuse y accion sobre referencias enviadas elegibles."
+    columns:
+      - name: metric_code
+        tests: [not_null]
+      - name: value
+        tests: [not_null]
+  - name: cobertura_certificacion
+    description: "Personal obligado con certificacion vigente."
+    columns:
+      - name: metric_code
+        tests: [not_null]
+      - name: value
+        tests: [not_null]
