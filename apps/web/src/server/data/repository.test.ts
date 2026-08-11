@@ -9,16 +9,23 @@ describe("platform modules repository", () => {
       "cases",
       "protocols",
       "risk",
+      "map",
       "interventions",
       "escalations",
+      "institutions",
+      "directory",
       "training",
       "community",
+      "communications",
       "audit",
       "analytics",
       "informes",
+      "privacy",
+      "adaptations",
       "configuration",
       "public-portal",
-      "notifications"
+      "notifications",
+      "integrations"
     ]);
     expect(modules.every((module) => module.count === 0)).toBe(true);
   });

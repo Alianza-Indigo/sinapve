@@ -70,6 +70,15 @@ paths:
           description: Safe status without sensitive details.
         "503":
           description: Live database environment is not linked.
+  /reports/{reportId}/messages:
+    post:
+      summary: Append a safe follow-up message to a public report.
+      operationId: createReportMessage
+      responses:
+        "201":
+          description: Message persisted for follow-up.
+        "404":
+          description: Report not found.
   /cases/{caseId}:
     get:
       summary: Read an authorized case file.
@@ -123,6 +132,15 @@ paths:
       responses:
         "201":
           description: Case event created.
+  /cases/{caseId}/assignments:
+    post:
+      summary: Assign or reassign an authorized case.
+      operationId: assignCase
+      security:
+        - SinapveInstitutionalHeaders: []
+      responses:
+        "201":
+          description: Case assignment persisted and audited.
   /cases/{caseId}/intervention-plans:
     post:
       summary: Create an intervention plan for a case.
@@ -132,6 +150,33 @@ paths:
       responses:
         "201":
           description: Intervention plan created.
+  /cases/{caseId}/interventions:
+    post:
+      summary: Create an intervention for a case.
+      operationId: createIntervention
+      security:
+        - SinapveInstitutionalHeaders: []
+      responses:
+        "201":
+          description: Intervention created.
+  /cases/{caseId}/close:
+    post:
+      summary: Close a case with auditable reason.
+      operationId: closeCase
+      security:
+        - SinapveInstitutionalHeaders: []
+      responses:
+        "200":
+          description: Case closed.
+  /cases/{caseId}/reopen:
+    post:
+      summary: Reopen a case with auditable reason.
+      operationId: reopenCase
+      security:
+        - SinapveInstitutionalHeaders: []
+      responses:
+        "200":
+          description: Case reopened.
   /cases/{caseId}/referrals:
     post:
       summary: Create a closed-loop referral/escalation for a case.
@@ -141,6 +186,15 @@ paths:
       responses:
         "201":
           description: Referral created and case escalated.
+  /referrals/{referralId}/ack:
+    post:
+      summary: Acknowledge an external referral in the closed loop.
+      operationId: acknowledgeReferral
+      security:
+        - SinapveInstitutionalHeaders: []
+      responses:
+        "200":
+          description: Referral acknowledgement recorded.
   /cases/{caseId}/evidence:
     post:
       summary: Upload authorized evidence to private Vercel Blob storage.
@@ -207,6 +261,15 @@ paths:
           description: User scope cannot run protocols for this case.
         "503":
           description: Live database environment is not linked.
+  /protocol-runs/{runId}/steps/{stepId}/complete:
+    post:
+      summary: Complete or block a protocol step after human confirmation.
+      operationId: completeProtocolStep
+      security:
+        - SinapveInstitutionalHeaders: []
+      responses:
+        "201":
+          description: Step event persisted and audited.
   /dashboards/{dashboardId}:
     get:
       summary: Read an authorized analytics dashboard.
@@ -220,6 +283,78 @@ paths:
           description: Missing verified institutional headers.
         "403":
           description: User role cannot read analytics.
+  /metrics/{metricCode}:
+    get:
+      summary: Read a certified metric widget by code.
+      operationId: getMetric
+      security:
+        - SinapveInstitutionalHeaders: []
+      responses:
+        "200":
+          description: Metric widget.
+        "404":
+          description: Metric code not found.
+  /maps/risk:
+    get:
+      summary: Read territorial risk map data with privacy suppression metadata.
+      operationId: getRiskMap
+      security:
+        - SinapveInstitutionalHeaders: []
+      responses:
+        "200":
+          description: Risk map widget data.
+  /ai/classifications:
+    post:
+      summary: Validate a supervised AI classification draft.
+      operationId: classifyWithHumanReview
+      responses:
+        "200":
+          description: Draft accepted with human confirmation required.
+        "422":
+          description: Invalid or unsafe model output.
+  /ai/summaries:
+    post:
+      summary: Create an extractive draft summary that requires human confirmation.
+      operationId: createAiSummary
+      responses:
+        "200":
+          description: Draft summary generated from provided source text.
+  /ai/feedback:
+    post:
+      summary: Persist human feedback for AI governance.
+      operationId: createAiFeedback
+      security:
+        - SinapveInstitutionalHeaders: []
+      responses:
+        "201":
+          description: Feedback persisted.
+  /certifications/verify/{publicCode}:
+    get:
+      summary: Verify a public certification code.
+      operationId: verifyCertification
+      responses:
+        "200":
+          description: Public certificate status.
+        "404":
+          description: Certification not found.
+  /report-jobs:
+    post:
+      summary: Create an auditable generated report job.
+      operationId: createReportJob
+      security:
+        - SinapveInstitutionalHeaders: []
+      responses:
+        "202":
+          description: Report job accepted.
+  /notifications/{notificationId}/ack:
+    post:
+      summary: Acknowledge a notification that requires receipt.
+      operationId: acknowledgeNotification
+      security:
+        - SinapveInstitutionalHeaders: []
+      responses:
+        "200":
+          description: Notification acknowledgement recorded.
   /modules:
     get:
       summary: List PRD platform modules visible to the current actor.
@@ -243,7 +378,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [reports, cases, protocols, risk, interventions, escalations, training, community, audit, analytics, informes, configuration, public-portal, notifications]
+            enum: [reports, cases, protocols, risk, map, interventions, escalations, institutions, directory, training, community, communications, audit, analytics, informes, privacy, adaptations, configuration, public-portal, notifications, integrations]
       responses:
         "200":
           description: Module records loaded from the database.
@@ -263,6 +398,57 @@ paths:
           description: Module record created.
         "405":
           description: Module does not support generic creation.
+  /organizations:
+    get:
+      summary: List institutional organizations for configuration workflows.
+      operationId: listOrganizations
+      security:
+        - SinapveInstitutionalHeaders: []
+      responses:
+        "200":
+          description: Organization catalog loaded from the live database.
+        "403":
+          description: User role cannot manage configuration.
+    post:
+      summary: Create an organization in the institutional catalog.
+      operationId: createOrganization
+      security:
+        - SinapveInstitutionalHeaders: []
+      responses:
+        "201":
+          description: Organization created.
+        "400":
+          description: Invalid organization payload.
+  /users:
+    post:
+      summary: Create a user identity and assign it to an organization.
+      operationId: createUserAssignment
+      security:
+        - SinapveInstitutionalHeaders: []
+      responses:
+        "201":
+          description: User and assignment created.
+        "422":
+          description: Organization is not present in the catalog.
+  /privacy-requests:
+    get:
+      summary: List data-subject privacy requests for privacy officers.
+      operationId: listPrivacyRequests
+      security:
+        - SinapveInstitutionalHeaders: []
+      responses:
+        "200":
+          description: Privacy requests loaded from the live database.
+        "403":
+          description: User role cannot read privacy requests.
+    post:
+      summary: Create a public data-subject privacy request.
+      operationId: createPrivacyRequest
+      responses:
+        "201":
+          description: Request received with due date.
+        "400":
+          description: Invalid privacy request payload.
   /search:
     get:
       summary: Universal search across authorized reports, cases and module records.

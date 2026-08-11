@@ -19,6 +19,7 @@ corepack pnpm db:generate
 - `CRON_SECRET` debe validarse en cada endpoint Cron.
 - Las migraciones destructivas siguen expand/migrate/contract.
 - Los adjuntos de expediente solo se consultan desde servidor con permiso vigente.
+- La carga inicial se hace con datos institucionales reales por API: organizaciones, usuarios, reportes, expedientes, privacidad y modulos operativos.
 
 ## Evidencia privada
 

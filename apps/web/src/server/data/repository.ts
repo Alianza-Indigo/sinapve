@@ -4,22 +4,37 @@ import { DatabaseNotConfiguredError, getDb, isDatabaseConfigured } from "../db";
 import {
   auditEvents,
   auditFindings,
+  aiFeedback,
+  caseAssignments,
   caseEvents,
   cases,
   communityInitiatives,
+  communicationCampaigns,
+  contextualAdaptations,
+  emirDispatches,
   generatedReports,
   interventionPlans,
+  institutionalBodies,
+  institutionalSessions,
+  integrationEvents,
   metricDefinitions,
+  notificationTemplates,
   notifications,
   organizations,
+  privacyRequests,
+  protocolStepEvents,
   protocolRuns,
   protocolVersions,
   publicResources,
   referrals,
+  reportMessages,
+  serviceDirectoryEntries,
   reports,
   systemConfigurations,
   trainingEnrollments,
-  trainingPrograms
+  trainingPrograms,
+  userAssignments,
+  users
 } from "../db/schema";
 import { suggestSeverity } from "../domain/protocols";
 import type { Actor, CaseFile, CaseState, CaseTimelineEvent, HelpReport, PlatformModuleId, PlatformModuleSummary, PlatformRecord, ReportMode, Severity } from "../domain/types";
@@ -35,16 +50,23 @@ const moduleCopy: Record<PlatformModuleId, Omit<PlatformModuleSummary, "count" |
   cases: { id: "cases", title: "Casos", description: "Expedientes de convivencia, lineas de tiempo y seguimiento.", href: "/backoffice/cases" },
   protocols: { id: "protocols", title: "Protocolos", description: "Versiones, hitos SLA, rutas de actuacion y ejecuciones.", href: "/backoffice/protocols" },
   risk: { id: "risk", title: "Alertas y riesgo", description: "Definiciones metricas, INRE, mapas y supresion de celdas pequenas.", href: "/backoffice/risk" },
+  map: { id: "map", title: "Mapa", description: "Mapa territorial de riesgo, cobertura y capacidad con privacidad aplicada.", href: "/backoffice/map" },
   interventions: { id: "interventions", title: "Intervenciones", description: "Planes individuales, ajustes razonables y revisiones.", href: "/backoffice/interventions" },
   escalations: { id: "escalations", title: "Escalamiento", description: "Referencias, acuses, circuito cerrado y equipos externos.", href: "/backoffice/escalations" },
+  institutions: { id: "institutions", title: "Instituciones", description: "CEC, UAT, UEPE, CMCE, EMIR, sesiones, acuerdos y guardias.", href: "/backoffice/institutions" },
+  directory: { id: "directory", title: "Directorio externo", description: "Servicios territoriales, competencias, contacto seguro e interoperabilidad.", href: "/backoffice/directory" },
   training: { id: "training", title: "Formacion", description: "Programas, inscripciones, certificacion y recertificacion.", href: "/backoffice/training" },
   community: { id: "community", title: "Comunidad", description: "Brigadas, campanas, familias y participacion con salvaguardas.", href: "/backoffice/community" },
+  communications: { id: "communications", title: "Comunicacion", description: "Campanas, calendario editorial, aprobacion legal y metricas de alcance.", href: "/backoffice/communications" },
   audit: { id: "audit", title: "Auditoria", description: "Eventos, hallazgos, planes correctivos y cumplimiento.", href: "/backoffice/audit" },
   analytics: { id: "analytics", title: "Analitica", description: "Indicadores certificados, calidad de datos y tableros.", href: "/backoffice/analytics" },
   informes: { id: "informes", title: "Informes", description: "Narrativas ejecutivas, aprobaciones y paquetes de evidencia.", href: "/backoffice/informes" },
+  privacy: { id: "privacy", title: "Privacidad", description: "Derechos de titulares, retencion, bloqueo legal y gobierno de datos.", href: "/backoffice/privacy" },
+  adaptations: { id: "adaptations", title: "Adaptaciones", description: "Solicitudes UEPE, revision tecnica/legal/accesible y repositorio publico.", href: "/backoffice/adaptations" },
   configuration: { id: "configuration", title: "Configuracion", description: "Matriz de severidad, retencion, territorio y versiones operativas.", href: "/backoffice/configuration" },
   "public-portal": { id: "public-portal", title: "Portal publico", description: "Recursos publicados, transparencia agregada y materiales accesibles.", href: "/backoffice/public-portal" },
-  notifications: { id: "notifications", title: "Notificaciones", description: "Avisos seguros, acuses, prioridades y canales permitidos.", href: "/backoffice/notifications" }
+  notifications: { id: "notifications", title: "Notificaciones", description: "Avisos seguros, acuses, prioridades y canales permitidos.", href: "/backoffice/notifications" },
+  integrations: { id: "integrations", title: "Integraciones", description: "Eventos externos, idempotencia, webhooks firmados y trazabilidad.", href: "/backoffice/integrations" }
 };
 
 const moduleOrder = Object.keys(moduleCopy) as PlatformModuleId[];
@@ -89,6 +111,16 @@ async function findReportRow(reportId: string) {
     .where(or(eq(reports.publicId, reportId), eq(reports.folio, reportId)))
     .limit(1);
   return report ?? null;
+}
+
+async function findUserRow(externalSubject: string) {
+  const db = getDb();
+  const [user] = await db
+    .select({ id: users.id, externalSubject: users.externalSubject, displayName: users.displayName })
+    .from(users)
+    .where(eq(users.externalSubject, externalSubject))
+    .limit(1);
+  return user ?? null;
 }
 
 export async function listReports() {
@@ -361,6 +393,40 @@ export async function createReport(input: {
   };
 }
 
+export async function createReportMessage(input: {
+  reportId: string;
+  senderType: "reporter" | "institution";
+  body: string;
+  actor?: Actor;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+
+  const db = getDb();
+  const report = await findReportRow(input.reportId);
+  if (!report) throw new Error("REPORT_NOT_FOUND");
+
+  const publicId = `msg_${nanoid(10)}`;
+  const [message] = await db
+    .insert(reportMessages)
+    .values({
+      publicId,
+      reportId: report.id,
+      senderType: input.senderType,
+      bodyCiphertext: input.body
+    })
+    .returning({ publicId: reportMessages.publicId, status: reportMessages.status, createdAt: reportMessages.createdAt });
+
+  await db.insert(auditEvents).values({
+    action: "report_message.create",
+    resourceType: "report",
+    resourceId: report.publicId,
+    reason: "safe_report_follow_up",
+    metadata: { actorId: input.actor?.id ?? "public", senderType: input.senderType }
+  });
+
+  return { id: message.publicId, status: message.status, createdAt: toIso(message.createdAt) };
+}
+
 export async function getLiveDataStatus(): Promise<LiveDataStatus> {
   if (!isDatabaseConfigured()) {
     return { databaseConfigured: false, reports: 0, cases: 0 };
@@ -476,7 +542,7 @@ export async function listModuleRecords(moduleId: PlatformModuleId): Promise<Pla
     ];
   }
 
-  if (moduleId === "risk" || moduleId === "analytics") {
+  if (moduleId === "risk" || moduleId === "analytics" || moduleId === "map") {
     const rows = await db
       .select({
         id: metricDefinitions.code,
@@ -487,7 +553,7 @@ export async function listModuleRecords(moduleId: PlatformModuleId): Promise<Pla
       .from(metricDefinitions)
       .limit(100);
     return rows.map((row) =>
-      platformRecord({ id: row.id, title: row.id, status: `v${row.version}`, owner: row.owner, detail: row.detail })
+      platformRecord({ id: row.id, title: row.id, status: `v${row.version}`, owner: row.owner, detail: moduleId === "map" ? "Capa territorial certificada" : row.detail })
     );
   }
 
@@ -526,6 +592,60 @@ export async function listModuleRecords(moduleId: PlatformModuleId): Promise<Pla
     );
   }
 
+  if (moduleId === "directory") {
+    const rows = await db
+      .select({
+        id: serviceDirectoryEntries.publicId,
+        title: serviceDirectoryEntries.name,
+        status: serviceDirectoryEntries.status,
+        owner: serviceDirectoryEntries.serviceType,
+        updatedAt: serviceDirectoryEntries.createdAt
+      })
+      .from(serviceDirectoryEntries)
+      .orderBy(desc(serviceDirectoryEntries.createdAt))
+      .limit(100);
+    return rows.map((row) => platformRecord({ ...row, detail: "Directorio territorial de servicios" }));
+  }
+
+  if (moduleId === "institutions") {
+    const bodies = await db
+      .select({
+        id: institutionalBodies.publicId,
+        title: institutionalBodies.name,
+        status: institutionalBodies.status,
+        owner: institutionalBodies.bodyType,
+        updatedAt: institutionalBodies.createdAt
+      })
+      .from(institutionalBodies)
+      .orderBy(desc(institutionalBodies.createdAt))
+      .limit(50);
+    const dispatches = await db
+      .select({
+        id: emirDispatches.publicId,
+        title: emirDispatches.teamName,
+        status: emirDispatches.status,
+        updatedAt: emirDispatches.createdAt
+      })
+      .from(emirDispatches)
+      .orderBy(desc(emirDispatches.createdAt))
+      .limit(50);
+    const sessions = await db
+      .select({
+        id: institutionalSessions.publicId,
+        title: institutionalSessions.status,
+        status: institutionalSessions.status,
+        updatedAt: institutionalSessions.createdAt
+      })
+      .from(institutionalSessions)
+      .orderBy(desc(institutionalSessions.createdAt))
+      .limit(50);
+    return [
+      ...bodies.map((row) => platformRecord({ ...row, detail: "Cuerpo institucional con quorum y plan anual" })),
+      ...dispatches.map((row) => platformRecord({ ...row, owner: "EMIR", detail: "Guardia, cobertura y disponibilidad" })),
+      ...sessions.map((row) => platformRecord({ ...row, owner: "Sesion", detail: "Agenda, quorum, acuerdos y tareas" }))
+    ];
+  }
+
   if (moduleId === "training") {
     const rows = await db
       .select({
@@ -558,6 +678,22 @@ export async function listModuleRecords(moduleId: PlatformModuleId): Promise<Pla
       .orderBy(desc(communityInitiatives.createdAt))
       .limit(100);
     return rows.map((row) => platformRecord({ ...row, detail: "Iniciativa comunitaria con salvaguardas" }));
+  }
+
+  if (moduleId === "communications") {
+    const rows = await db
+      .select({
+        id: communicationCampaigns.publicId,
+        title: communicationCampaigns.title,
+        status: communicationCampaigns.status,
+        owner: communicationCampaigns.audience,
+        updatedAt: communicationCampaigns.createdAt,
+        detail: communicationCampaigns.language
+      })
+      .from(communicationCampaigns)
+      .orderBy(desc(communicationCampaigns.createdAt))
+      .limit(100);
+    return rows.map((row) => platformRecord({ ...row, detail: `Idioma ${row.detail}` }));
   }
 
   if (moduleId === "audit") {
@@ -618,6 +754,26 @@ export async function listModuleRecords(moduleId: PlatformModuleId): Promise<Pla
     return rows.map((row) => platformRecord({ ...row, owner: `Version ${row.owner}`, detail: "Configuracion versionada" }));
   }
 
+  if (moduleId === "privacy") {
+    return listPrivacyRequests();
+  }
+
+  if (moduleId === "adaptations") {
+    const rows = await db
+      .select({
+        id: contextualAdaptations.publicId,
+        title: contextualAdaptations.title,
+        status: contextualAdaptations.approvalStatus,
+        owner: contextualAdaptations.population,
+        updatedAt: contextualAdaptations.createdAt,
+        detail: contextualAdaptations.reviewStatus
+      })
+      .from(contextualAdaptations)
+      .orderBy(desc(contextualAdaptations.createdAt))
+      .limit(100);
+    return rows.map((row) => platformRecord({ ...row, detail: `Revision ${row.detail}` }));
+  }
+
   if (moduleId === "public-portal") {
     const rows = await db
       .select({
@@ -646,6 +802,34 @@ export async function listModuleRecords(moduleId: PlatformModuleId): Promise<Pla
       })
       .from(notifications)
       .orderBy(desc(notifications.createdAt))
+      .limit(100);
+    const templates = await db
+      .select({
+        id: notificationTemplates.publicId,
+        title: notificationTemplates.name,
+        status: notificationTemplates.status,
+        owner: notificationTemplates.channel,
+        updatedAt: notificationTemplates.createdAt,
+        detail: notificationTemplates.priority
+      })
+      .from(notificationTemplates)
+      .orderBy(desc(notificationTemplates.createdAt))
+      .limit(100);
+    return [...rows.map(platformRecord), ...templates.map(platformRecord)];
+  }
+
+  if (moduleId === "integrations") {
+    const rows = await db
+      .select({
+        id: integrationEvents.publicId,
+        title: integrationEvents.eventType,
+        status: integrationEvents.status,
+        owner: integrationEvents.source,
+        updatedAt: integrationEvents.createdAt,
+        detail: integrationEvents.idempotencyKey
+      })
+      .from(integrationEvents)
+      .orderBy(desc(integrationEvents.createdAt))
       .limit(100);
     return rows.map(platformRecord);
   }
@@ -760,6 +944,52 @@ export async function updateCaseState(input: {
   });
 
   return getCase(caseRow.publicId);
+}
+
+export async function assignCase(input: {
+  caseId: string;
+  assigneeExternalSubject: string;
+  role?: string;
+  reason: string;
+  actor: Actor;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+
+  const db = getDb();
+  const caseRow = await findCaseRow(input.caseId);
+  if (!caseRow) throw new Error("CASE_NOT_FOUND");
+  const user = await findUserRow(input.assigneeExternalSubject);
+  if (!user) throw new Error("USER_NOT_FOUND");
+
+  const publicId = `assign_${nanoid(10)}`;
+  const [assignment] = await db
+    .insert(caseAssignments)
+    .values({
+      publicId,
+      caseId: caseRow.id,
+      userId: user.id,
+      role: input.role ?? "responsable",
+      reason: input.reason
+    })
+    .returning({ publicId: caseAssignments.publicId, role: caseAssignments.role, createdAt: caseAssignments.createdAt });
+
+  await db.update(cases).set({ assignedUserId: user.id }).where(eq(cases.id, caseRow.id));
+  await db.insert(caseEvents).values({
+    caseId: caseRow.id,
+    actorUserId: user.id,
+    title: "Responsable asignado",
+    bodyCiphertext: input.reason,
+    eventType: "case.assignment"
+  });
+  await db.insert(auditEvents).values({
+    action: "case.assign",
+    resourceType: "case",
+    resourceId: caseRow.publicId,
+    reason: input.reason,
+    metadata: { actorId: input.actor.id, assigneeExternalSubject: input.assigneeExternalSubject, assignmentId: assignment.publicId }
+  });
+
+  return { id: assignment.publicId, caseId: caseRow.publicId, assignee: user.externalSubject, role: assignment.role, createdAt: toIso(assignment.createdAt) };
 }
 
 export async function addCaseTimelineEvent(input: {
@@ -958,6 +1188,54 @@ export async function startPersistedProtocolRun(input: { caseId: string; actor: 
   };
 }
 
+export async function completeProtocolStep(input: {
+  runId: string;
+  stepId: string;
+  status?: "completado" | "bloqueado";
+  evidencePathname?: string;
+  notes?: string;
+  actor: Actor;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+
+  const db = getDb();
+  const [run] = await db
+    .select({ id: protocolRuns.id, caseId: protocolRuns.caseId, status: protocolRuns.status })
+    .from(protocolRuns)
+    .where(eq(protocolRuns.id, input.runId))
+    .limit(1);
+  if (!run) throw new Error("PROTOCOL_RUN_NOT_FOUND");
+
+  const publicId = `step_${nanoid(10)}`;
+  const [event] = await db
+    .insert(protocolStepEvents)
+    .values({
+      publicId,
+      protocolRunId: run.id,
+      stepId: input.stepId,
+      status: input.status ?? "completado",
+      evidencePathname: input.evidencePathname,
+      notesCiphertext: input.notes
+    })
+    .returning({ publicId: protocolStepEvents.publicId, stepId: protocolStepEvents.stepId, status: protocolStepEvents.status, createdAt: protocolStepEvents.createdAt });
+
+  await db.insert(caseEvents).values({
+    caseId: run.caseId,
+    title: "Paso de protocolo actualizado",
+    bodyCiphertext: `${event.stepId}:${event.status}`,
+    eventType: "protocol.step"
+  });
+  await db.insert(auditEvents).values({
+    action: "protocol_step.complete",
+    resourceType: "protocol_run",
+    resourceId: input.runId,
+    reason: "human_confirmed_protocol_step",
+    metadata: { actorId: input.actor.id, stepId: input.stepId, status: event.status }
+  });
+
+  return { id: event.publicId, runId: input.runId, stepId: event.stepId, status: event.status, createdAt: toIso(event.createdAt) };
+}
+
 export async function createTrainingProgram(input: {
   title: string;
   audienceRole: string;
@@ -1112,4 +1390,501 @@ export async function createGovernanceRecord(
   }
 
   throw new Error("UNSUPPORTED_MODULE_OPERATION");
+}
+
+export async function createInstitutionalBody(input: {
+  organizationPublicId: string;
+  bodyType: string;
+  name: string;
+  quorumRules?: Record<string, unknown>;
+  annualPlan?: Record<string, unknown>;
+  actor: Actor;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const organization = await findOrganizationRow(input.organizationPublicId);
+  if (!organization) throw new Error("ORGANIZATION_NOT_FOUND");
+  const publicId = `body_${nanoid(10)}`;
+  const [body] = await db
+    .insert(institutionalBodies)
+    .values({
+      publicId,
+      organizationId: organization.id,
+      bodyType: input.bodyType,
+      name: input.name,
+      quorumRules: input.quorumRules ?? {},
+      annualPlan: input.annualPlan ?? {}
+    })
+    .returning({ publicId: institutionalBodies.publicId, name: institutionalBodies.name, status: institutionalBodies.status });
+  await db.insert(auditEvents).values({
+    action: "institutional_body.create",
+    resourceType: "institutional_body",
+    resourceId: body.publicId,
+    reason: "institutional_governance",
+    metadata: { actorId: input.actor.id, bodyType: input.bodyType }
+  });
+  return body;
+}
+
+export async function createServiceDirectoryEntry(input: {
+  organizationPublicId?: string;
+  serviceType: string;
+  name: string;
+  territory?: Record<string, unknown>;
+  contactPolicy?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  actor: Actor;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const organization = input.organizationPublicId ? await findOrganizationRow(input.organizationPublicId) : null;
+  if (input.organizationPublicId && !organization) throw new Error("ORGANIZATION_NOT_FOUND");
+  const publicId = `svc_${nanoid(10)}`;
+  const [entry] = await db
+    .insert(serviceDirectoryEntries)
+    .values({
+      publicId,
+      organizationId: organization?.id,
+      serviceType: input.serviceType,
+      name: input.name,
+      territory: input.territory ?? {},
+      contactPolicy: input.contactPolicy ?? {},
+      metadata: input.metadata ?? {}
+    })
+    .returning({ publicId: serviceDirectoryEntries.publicId, name: serviceDirectoryEntries.name, status: serviceDirectoryEntries.status });
+  await db.insert(auditEvents).values({
+    action: "service_directory_entry.create",
+    resourceType: "service_directory_entry",
+    resourceId: entry.publicId,
+    reason: "external_interoperability_directory",
+    metadata: { actorId: input.actor.id, serviceType: input.serviceType }
+  });
+  return entry;
+}
+
+export async function createEmirDispatch(input: {
+  organizationPublicId?: string;
+  caseId?: string;
+  teamName: string;
+  coverageArea?: Record<string, unknown>;
+  approximateLocation?: Record<string, unknown>;
+  capacitySnapshot?: Record<string, unknown>;
+  status?: string;
+  actor: Actor;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const organization = input.organizationPublicId ? await findOrganizationRow(input.organizationPublicId) : null;
+  if (input.organizationPublicId && !organization) throw new Error("ORGANIZATION_NOT_FOUND");
+  const caseRow = input.caseId ? await findCaseRow(input.caseId) : null;
+  if (input.caseId && !caseRow) throw new Error("CASE_NOT_FOUND");
+  const publicId = `emir_${nanoid(10)}`;
+  const [dispatch] = await db
+    .insert(emirDispatches)
+    .values({
+      publicId,
+      organizationId: organization?.id,
+      caseId: caseRow?.id,
+      teamName: input.teamName,
+      coverageArea: input.coverageArea ?? {},
+      approximateLocation: input.approximateLocation ?? {},
+      capacitySnapshot: input.capacitySnapshot ?? {},
+      status: input.status ?? "disponible",
+      dispatchedAt: input.status === "despachado" ? new Date() : null
+    })
+    .returning({ publicId: emirDispatches.publicId, teamName: emirDispatches.teamName, status: emirDispatches.status });
+  await db.insert(auditEvents).values({
+    action: "emir_dispatch.create",
+    resourceType: "emir_dispatch",
+    resourceId: dispatch.publicId,
+    reason: "emir_availability_and_dispatch",
+    metadata: { actorId: input.actor.id, caseId: caseRow?.publicId }
+  });
+  return dispatch;
+}
+
+export async function createCommunicationCampaign(input: {
+  title: string;
+  audience: string;
+  territory?: Record<string, unknown>;
+  language?: string;
+  channelPlan?: Record<string, unknown>;
+  contentPolicy?: Record<string, unknown>;
+  startsAt?: string;
+  endsAt?: string;
+  actor: Actor;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const publicId = `camp_${nanoid(10)}`;
+  const [campaign] = await db
+    .insert(communicationCampaigns)
+    .values({
+      publicId,
+      title: input.title,
+      audience: input.audience,
+      territory: input.territory ?? {},
+      language: input.language ?? "es",
+      channelPlan: input.channelPlan ?? {},
+      contentPolicy: input.contentPolicy ?? {},
+      startsAt: input.startsAt ? new Date(input.startsAt) : null,
+      endsAt: input.endsAt ? new Date(input.endsAt) : null
+    })
+    .returning({ publicId: communicationCampaigns.publicId, title: communicationCampaigns.title, status: communicationCampaigns.status });
+  await db.insert(auditEvents).values({
+    action: "communication_campaign.create",
+    resourceType: "communication_campaign",
+    resourceId: campaign.publicId,
+    reason: "accessible_campaign_governance",
+    metadata: { actorId: input.actor.id, audience: input.audience }
+  });
+  return campaign;
+}
+
+export async function createContextualAdaptation(input: {
+  title: string;
+  organizationPublicId?: string;
+  territory?: Record<string, unknown>;
+  population: string;
+  justification: string;
+  risks?: Record<string, unknown>;
+  evidence?: Record<string, unknown>;
+  publicSummary?: string;
+  effectiveFrom?: string;
+  effectiveTo?: string;
+  actor: Actor;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const organization = input.organizationPublicId ? await findOrganizationRow(input.organizationPublicId) : null;
+  if (input.organizationPublicId && !organization) throw new Error("ORGANIZATION_NOT_FOUND");
+  const publicId = `adapt_${nanoid(10)}`;
+  const [adaptation] = await db
+    .insert(contextualAdaptations)
+    .values({
+      publicId,
+      title: input.title,
+      requestingOrganizationId: organization?.id,
+      territory: input.territory ?? {},
+      population: input.population,
+      justification: input.justification,
+      risks: input.risks ?? {},
+      evidence: input.evidence ?? {},
+      publicSummary: input.publicSummary,
+      effectiveFrom: input.effectiveFrom ? new Date(input.effectiveFrom) : null,
+      effectiveTo: input.effectiveTo ? new Date(input.effectiveTo) : null
+    })
+    .returning({ publicId: contextualAdaptations.publicId, title: contextualAdaptations.title, status: contextualAdaptations.approvalStatus });
+  await db.insert(auditEvents).values({
+    action: "contextual_adaptation.create",
+    resourceType: "contextual_adaptation",
+    resourceId: adaptation.publicId,
+    reason: "uepe_contextual_adaptation_request",
+    metadata: { actorId: input.actor.id, organizationPublicId: input.organizationPublicId }
+  });
+  return adaptation;
+}
+
+export async function createNotificationTemplate(input: {
+  name: string;
+  channel: string;
+  priority: string;
+  locale?: string;
+  safeBody: string;
+  actor: Actor;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const publicId = `ntpl_${nanoid(10)}`;
+  const [template] = await db
+    .insert(notificationTemplates)
+    .values({
+      publicId,
+      name: input.name,
+      channel: input.channel,
+      priority: input.priority,
+      locale: input.locale ?? "es-MX",
+      safeBody: input.safeBody
+    })
+    .returning({ publicId: notificationTemplates.publicId, name: notificationTemplates.name, status: notificationTemplates.status });
+  await db.insert(auditEvents).values({
+    action: "notification_template.create",
+    resourceType: "notification_template",
+    resourceId: template.publicId,
+    reason: "safe_notification_template",
+    metadata: { actorId: input.actor.id, channel: input.channel, priority: input.priority }
+  });
+  return template;
+}
+
+export async function acknowledgeNotification(input: { notificationId: string; actor: Actor }) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const [notification] = await db
+    .update(notifications)
+    .set({ status: "acuse", acknowledgedAt: new Date() })
+    .where(eq(notifications.publicId, input.notificationId))
+    .returning({ publicId: notifications.publicId, status: notifications.status, acknowledgedAt: notifications.acknowledgedAt });
+  if (!notification) throw new Error("NOTIFICATION_NOT_FOUND");
+  await db.insert(auditEvents).values({
+    action: "notification.acknowledge",
+    resourceType: "notification",
+    resourceId: notification.publicId,
+    reason: "critical_notification_ack",
+    metadata: { actorId: input.actor.id }
+  });
+  return { id: notification.publicId, status: notification.status, acknowledgedAt: notification.acknowledgedAt ? toIso(notification.acknowledgedAt) : null };
+}
+
+export async function acknowledgeReferral(input: { referralId: string; actor: Actor; externalStatus?: string }) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const [referral] = await db
+    .update(referrals)
+    .set({ status: input.externalStatus ?? "acuse_recibido" })
+    .where(eq(referrals.publicId, input.referralId))
+    .returning({ publicId: referrals.publicId, status: referrals.status });
+  if (!referral) throw new Error("REFERRAL_NOT_FOUND");
+  await db.insert(auditEvents).values({
+    action: "referral.acknowledge",
+    resourceType: "referral",
+    resourceId: referral.publicId,
+    reason: "closed_loop_external_ack",
+    metadata: { actorId: input.actor.id, externalStatus: input.externalStatus }
+  });
+  return { id: referral.publicId, status: referral.status };
+}
+
+export async function createIntegrationEvent(input: {
+  idempotencyKey: string;
+  source: string;
+  eventType: string;
+  signatureDigest?: string;
+  payload?: Record<string, unknown>;
+  actor: Actor;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const publicId = `evt_${nanoid(10)}`;
+  const [event] = await db
+    .insert(integrationEvents)
+    .values({
+      publicId,
+      idempotencyKey: input.idempotencyKey,
+      source: input.source,
+      eventType: input.eventType,
+      signatureDigest: input.signatureDigest,
+      payload: input.payload ?? {}
+    })
+    .returning({ publicId: integrationEvents.publicId, status: integrationEvents.status, createdAt: integrationEvents.createdAt });
+  await db.insert(auditEvents).values({
+    action: "integration_event.receive",
+    resourceType: "integration_event",
+    resourceId: event.publicId,
+    reason: "signed_external_event",
+    metadata: { actorId: input.actor.id, source: input.source, eventType: input.eventType, idempotencyKey: input.idempotencyKey }
+  });
+  return { id: event.publicId, status: event.status, createdAt: toIso(event.createdAt) };
+}
+
+export async function recordAiFeedback(input: {
+  resourceType: string;
+  resourceId: string;
+  rating: "util" | "incorrecta" | "riesgosa";
+  notes?: string;
+  actor: Actor;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+
+  const db = getDb();
+  const publicId = `aifb_${nanoid(10)}`;
+  const [feedback] = await db
+    .insert(aiFeedback)
+    .values({
+      publicId,
+      resourceType: input.resourceType,
+      resourceId: input.resourceId,
+      rating: input.rating,
+      notesCiphertext: input.notes
+    })
+    .returning({ publicId: aiFeedback.publicId, rating: aiFeedback.rating, createdAt: aiFeedback.createdAt });
+
+  await db.insert(auditEvents).values({
+    action: "ai_feedback.create",
+    resourceType: input.resourceType,
+    resourceId: input.resourceId,
+    reason: "human_model_governance_feedback",
+    metadata: { actorId: input.actor.id, feedbackId: feedback.publicId, rating: feedback.rating }
+  });
+
+  return { id: feedback.publicId, rating: feedback.rating, createdAt: toIso(feedback.createdAt) };
+}
+
+export async function verifyCertification(publicCode: string) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+
+  const db = getDb();
+  const [certificate] = await db
+    .select({
+      publicCode: trainingEnrollments.certificatePublicCode,
+      status: trainingEnrollments.status,
+      progressPercent: trainingEnrollments.progressPercent,
+      certifiedAt: trainingEnrollments.certifiedAt,
+      expiresAt: trainingEnrollments.expiresAt,
+      person: users.displayName,
+      program: trainingPrograms.title
+    })
+    .from(trainingEnrollments)
+    .innerJoin(users, eq(trainingEnrollments.userId, users.id))
+    .innerJoin(trainingPrograms, eq(trainingEnrollments.programId, trainingPrograms.id))
+    .where(eq(trainingEnrollments.certificatePublicCode, publicCode))
+    .limit(1);
+
+  if (!certificate) return null;
+  return {
+    publicCode: certificate.publicCode,
+    status: certificate.status,
+    progressPercent: certificate.progressPercent,
+    certifiedAt: certificate.certifiedAt ? toIso(certificate.certifiedAt) : null,
+    expiresAt: certificate.expiresAt ? toIso(certificate.expiresAt) : null,
+    person: certificate.person,
+    program: certificate.program
+  };
+}
+
+export async function listOrganizations() {
+  if (!isDatabaseConfigured()) return [];
+  const db = getDb();
+  return db
+    .select({
+      id: organizations.publicId,
+      name: organizations.name,
+      type: organizations.type,
+      stateCode: organizations.stateCode,
+      municipalityCode: organizations.municipalityCode,
+      createdAt: organizations.createdAt
+    })
+    .from(organizations)
+    .orderBy(desc(organizations.createdAt))
+    .limit(250);
+}
+
+export async function createOrganization(input: {
+  publicId?: string;
+  name: string;
+  type: "federal" | "state" | "municipality" | "zone" | "school";
+  stateCode?: string;
+  municipalityCode?: string;
+  actor: Actor;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const publicId = input.publicId || `org_${nanoid(10)}`;
+  const [organization] = await db
+    .insert(organizations)
+    .values({
+      publicId,
+      name: input.name,
+      type: input.type,
+      stateCode: input.stateCode,
+      municipalityCode: input.municipalityCode
+    })
+    .returning({ publicId: organizations.publicId, name: organizations.name, type: organizations.type });
+
+  await db.insert(auditEvents).values({
+    action: "organization.create",
+    resourceType: "organization",
+    resourceId: organization.publicId,
+    reason: "institutional_catalog_update",
+    metadata: { actorId: input.actor.id }
+  });
+
+  return organization;
+}
+
+export async function createUserWithAssignment(input: {
+  externalSubject: string;
+  displayName: string;
+  email?: string;
+  organizationPublicId: string;
+  role: string;
+  actor: Actor;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const organization = await findOrganizationRow(input.organizationPublicId);
+  if (!organization) throw new Error("ORGANIZATION_NOT_FOUND");
+
+  const [user] = await db
+    .insert(users)
+    .values({
+      externalSubject: input.externalSubject,
+      displayName: input.displayName,
+      email: input.email
+    })
+    .returning({ id: users.id, externalSubject: users.externalSubject, displayName: users.displayName });
+
+  await db.insert(userAssignments).values({
+    userId: user.id,
+    organizationId: organization.id,
+    role: input.role
+  });
+  await db.insert(auditEvents).values({
+    action: "user_assignment.create",
+    resourceType: "user",
+    resourceId: user.externalSubject,
+    reason: "identity_access_update",
+    metadata: { actorId: input.actor.id, role: input.role, organizationPublicId: organization.publicId }
+  });
+
+  return { id: user.externalSubject, displayName: user.displayName, role: input.role, organizationId: organization.publicId };
+}
+
+export async function createPrivacyRequest(input: {
+  requestType: string;
+  requesterContact: string;
+  scope?: Record<string, unknown>;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const publicId = `priv_${nanoid(10)}`;
+  const dueAt = new Date();
+  dueAt.setDate(dueAt.getDate() + 20);
+  const [request] = await db
+    .insert(privacyRequests)
+    .values({
+      publicId,
+      requestType: input.requestType,
+      requesterContactCiphertext: input.requesterContact,
+      scope: input.scope ?? {},
+      dueAt
+    })
+    .returning({ publicId: privacyRequests.publicId, status: privacyRequests.status, dueAt: privacyRequests.dueAt });
+
+  await db.insert(auditEvents).values({
+    action: "privacy_request.create",
+    resourceType: "privacy_request",
+    resourceId: request.publicId,
+    reason: "data_subject_rights",
+    metadata: { requestType: input.requestType }
+  });
+
+  return { id: request.publicId, status: request.status, dueAt: toIso(request.dueAt) };
+}
+
+export async function listPrivacyRequests() {
+  if (!isDatabaseConfigured()) return [];
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: privacyRequests.publicId,
+      title: privacyRequests.requestType,
+      status: privacyRequests.status,
+      updatedAt: privacyRequests.createdAt,
+      detail: privacyRequests.dueAt
+    })
+    .from(privacyRequests)
+    .orderBy(desc(privacyRequests.createdAt))
+    .limit(100);
+  return rows.map((row) => platformRecord({ ...row, detail: row.detail ? `Vence ${toIso(row.detail)}` : "" }));
 }

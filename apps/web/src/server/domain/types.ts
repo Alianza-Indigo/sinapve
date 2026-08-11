@@ -128,16 +128,23 @@ export type PlatformModuleId =
   | "cases"
   | "protocols"
   | "risk"
+  | "map"
   | "interventions"
   | "escalations"
+  | "institutions"
+  | "directory"
   | "training"
   | "community"
+  | "communications"
   | "audit"
   | "analytics"
   | "informes"
+  | "privacy"
+  | "adaptations"
   | "configuration"
   | "public-portal"
-  | "notifications";
+  | "notifications"
+  | "integrations";
 
 export type PlatformModuleSummary = {
   id: PlatformModuleId;

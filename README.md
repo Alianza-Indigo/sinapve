@@ -9,8 +9,8 @@ Esta entrega deja una base operativa alineada al PRD:
 - Cero dependencias de Supabase.
 - Drizzle ORM sobre Neon PostgreSQL serverless.
 - Vercel Blob privado para evidencia sensible.
-- Modelo inicial de organizaciones, reportes, casos, protocolos, metricas y auditoria.
-- Portal publico de ayuda, backoffice, expediente, protocolo y tablero analitico.
+- Modelo operativo de organizaciones, usuarios, reportes, casos, protocolos, intervenciones, escalamiento, formacion, comunidad, privacidad, metricas y auditoria.
+- Portal publico de ayuda, seguimiento, transparencia, backoffice modular, expediente, protocolo y tablero analitico G01-G32.
 - APIs REST versionadas en `/api/v1`.
 - Cron diario para revision SLA.
 - RBAC + ABAC de servidor mediante identidad institucional verificada por headers.
@@ -46,3 +46,21 @@ La ruta `POST /api/v1/cases/{caseId}/evidence` sube archivos permitidos al almac
 La lectura pasa por `GET /api/v1/cases/{caseId}/evidence?pathname=...`, donde se valida el alcance del expediente antes de llamar `get()` al store privado.
 
 En local sin el token del almacenamiento privado enlazado, esas rutas responden `private_blob_not_configured`.
+
+## Operacion sin datos sinteticos
+
+La plataforma expone flujos para capturar datos reales desde APIs y formularios:
+
+- `POST /api/v1/organizations` y `POST /api/v1/users` configuran catalogo institucional y asignaciones.
+- `POST /api/v1/reports` recibe solicitudes publicas de ayuda.
+- `POST /api/v1/reports/{reportId}/messages` permite seguimiento seguro del reporte.
+- `POST /api/v1/cases`, `/assignments`, `/events`, `/interventions`, `/referrals`, `/close`, `/reopen` y `/protocol-runs` operan expedientes.
+- `POST /api/v1/referrals/{referralId}/ack` cierra el circuito de acuse externo.
+- `POST /api/v1/protocol-runs/{runId}/steps/{stepId}/complete` registra avance humano del protocolo.
+- `GET /api/v1/metrics/{metricCode}` y `GET /api/v1/maps/risk` exponen analitica certificada.
+- `POST /api/v1/ai/classifications`, `/ai/summaries` y `/ai/feedback` mantienen IA supervisada y gobernada.
+- `GET /api/v1/certifications/verify/{publicCode}` valida certificaciones publicas.
+- `POST /api/v1/report-jobs` crea informes aprobables.
+- `POST /api/v1/privacy-requests` registra derechos de titulares sin requerir cuenta institucional.
+- `POST /api/v1/notifications/{notificationId}/ack` registra acuses criticos.
+- `POST /api/v1/modules/{moduleId}` crea registros de instituciones/EMIR, directorio externo, formacion, comunidad, comunicacion, auditoria, informes, privacidad, adaptaciones, configuracion, portal publico, notificaciones e integraciones.

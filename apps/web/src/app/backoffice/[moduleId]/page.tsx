@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Lock } from "lucide-react";
 import { Topbar } from "@/components/Topbar";
+import { ModuleCreateForm } from "@/components/ModuleCreateForm";
 import { ModuleRecordsTable } from "@/components/ModuleRecordsTable";
 import { getActorFromHeaders } from "@/server/auth/current-actor";
 import { listModuleRecords, listPlatformModules } from "@/server/data/repository";
@@ -14,16 +15,23 @@ const validModuleIds = [
   "cases",
   "protocols",
   "risk",
+  "map",
   "interventions",
   "escalations",
+  "institutions",
+  "directory",
   "training",
   "community",
+  "communications",
   "audit",
   "analytics",
   "informes",
+  "privacy",
+  "adaptations",
   "configuration",
   "public-portal",
-  "notifications"
+  "notifications",
+  "integrations"
 ] satisfies PlatformModuleId[];
 
 export const dynamic = "force-dynamic";
@@ -74,6 +82,11 @@ export default async function BackofficeModulePage({ params }: { params: Promise
           <p className="eyebrow">{module.statusLabel}</p>
           <h1 style={{ fontSize: "clamp(2rem, 5vw, 3.2rem)" }}>{module.title}</h1>
           <p className="lead">{module.description}</p>
+        </section>
+        <section className="panel" style={{ marginTop: "1rem" }}>
+          <p className="eyebrow">Operacion</p>
+          <h2>Crear registro</h2>
+          <ModuleCreateForm moduleId={moduleId as PlatformModuleId} />
         </section>
         <section className="panel" style={{ marginTop: "1rem" }}>
           <h2>Registros</h2>

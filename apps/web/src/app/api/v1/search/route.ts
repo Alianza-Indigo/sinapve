@@ -6,16 +6,23 @@ import type { PlatformModuleId } from "@/server/domain/types";
 const modules: PlatformModuleId[] = [
   "protocols",
   "risk",
+  "map",
   "interventions",
   "escalations",
+  "institutions",
+  "directory",
   "training",
   "community",
+  "communications",
   "audit",
   "analytics",
   "informes",
+  "privacy",
+  "adaptations",
   "configuration",
   "public-portal",
-  "notifications"
+  "notifications",
+  "integrations"
 ];
 
 export const runtime = "nodejs";
