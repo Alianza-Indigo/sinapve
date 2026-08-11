@@ -371,6 +371,7 @@ export const protocolStepEvents = pgTable(
       .references(() => protocolRuns.id),
     stepId: text("step_id").notNull(),
     status: text("status").notNull(),
+    chosenNext: text("chosen_next"),
     evidencePathname: text("evidence_pathname"),
     notesCiphertext: text("notes_ciphertext"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()

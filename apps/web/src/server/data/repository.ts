@@ -69,7 +69,17 @@ import {
   users
 } from "../db/schema";
 import { suggestSeverity } from "../domain/protocols";
-import { compileProtocolGraph, graphFromSteps, validateProtocolGraph, type ProtocolGraph } from "../domain/protocol-graph";
+import {
+  compileProtocolGraph,
+  deriveProtocolRunState,
+  graphFromSteps,
+  normalizeStoredSteps,
+  validateBranchChoice,
+  validateProtocolGraph,
+  type ProtocolGraph,
+  type ProtocolRunEvent,
+  type ProtocolRunState
+} from "../domain/protocol-graph";
 import { evaluateMediation } from "../domain/mediation";
 import { isReferralOverdue } from "../domain/sla";
 import { validateDashboardWidgets } from "../domain/dashboards";
@@ -1404,10 +1414,87 @@ export async function startPersistedProtocolRun(input: { caseId: string; actor: 
   };
 }
 
+// EP-04 / 7.x: al completar una decision, la rama elegida debe ser una
+// transicion legal del paso; de lo contrario la corrida no puede avanzar.
+export class ProtocolBranchError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ProtocolBranchError";
+  }
+}
+
+// Carga la corrida, sus pasos compilados (desde la version) y sus eventos en
+// orden cronologico, listos para el reductor del motor de corridas.
+async function loadRunContext(runId: string) {
+  const db = getDb();
+  const [run] = await db
+    .select({ id: protocolRuns.id, caseId: protocolRuns.caseId, status: protocolRuns.status, protocolVersionId: protocolRuns.protocolVersionId })
+    .from(protocolRuns)
+    .where(eq(protocolRuns.id, runId))
+    .limit(1);
+  if (!run) return null;
+
+  const [version] = await db
+    .select({ code: protocolVersions.code, version: protocolVersions.version, title: protocolVersions.title, steps: protocolVersions.steps })
+    .from(protocolVersions)
+    .where(eq(protocolVersions.id, run.protocolVersionId))
+    .limit(1);
+  const steps = normalizeStoredSteps(version && Array.isArray(version.steps) ? version.steps : []);
+
+  const eventRows = await db
+    .select({ stepId: protocolStepEvents.stepId, status: protocolStepEvents.status, chosenNext: protocolStepEvents.chosenNext, createdAt: protocolStepEvents.createdAt })
+    .from(protocolStepEvents)
+    .where(eq(protocolStepEvents.protocolRunId, run.id))
+    .orderBy(protocolStepEvents.createdAt);
+  const events: ProtocolRunEvent[] = eventRows.map((row) => ({
+    stepId: row.stepId,
+    status: row.status === "bloqueado" ? "bloqueado" : "completado",
+    chosenNext: row.chosenNext
+  }));
+
+  return { run, version, steps, events };
+}
+
+// Estado navegable de una corrida (para consola y API).
+export async function getProtocolRunState(runId: string): Promise<
+  | (ProtocolRunState & { runId: string; caseId: string; protocolCode: string | null; protocolVersion: number | null; protocolTitle: string | null })
+  | null
+> {
+  if (!isDatabaseConfigured()) return null;
+  const context = await loadRunContext(runId);
+  if (!context) return null;
+  const state = deriveProtocolRunState(context.steps, context.events);
+  return {
+    ...state,
+    runId: context.run.id,
+    caseId: context.run.caseId,
+    protocolCode: context.version?.code ?? null,
+    protocolVersion: context.version?.version ?? null,
+    protocolTitle: context.version?.title ?? null
+  };
+}
+
+// Ultima corrida de un expediente con su estado calculado (o null si no hay).
+export async function getActiveProtocolRunForCase(caseId: string) {
+  if (!isDatabaseConfigured()) return null;
+  const db = getDb();
+  const caseRow = await findCaseRow(caseId);
+  if (!caseRow) return null;
+  const [run] = await db
+    .select({ id: protocolRuns.id })
+    .from(protocolRuns)
+    .where(eq(protocolRuns.caseId, caseRow.id))
+    .orderBy(desc(protocolRuns.startedAt))
+    .limit(1);
+  if (!run) return null;
+  return getProtocolRunState(run.id);
+}
+
 export async function completeProtocolStep(input: {
   runId: string;
   stepId: string;
   status?: "completado" | "bloqueado";
+  chosenNext?: string;
   evidencePathname?: string;
   notes?: string;
   actor: Actor;
@@ -1415,12 +1502,19 @@ export async function completeProtocolStep(input: {
   if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
 
   const db = getDb();
-  const [run] = await db
-    .select({ id: protocolRuns.id, caseId: protocolRuns.caseId, status: protocolRuns.status })
-    .from(protocolRuns)
-    .where(eq(protocolRuns.id, input.runId))
-    .limit(1);
-  if (!run) throw new Error("PROTOCOL_RUN_NOT_FOUND");
+  const context = await loadRunContext(input.runId);
+  if (!context) throw new Error("PROTOCOL_RUN_NOT_FOUND");
+  const { run, steps } = context;
+
+  const status = input.status ?? "completado";
+  const definition = steps.find((step) => step.id === input.stepId);
+
+  // Validar la eleccion de rama solo al completar (no al bloquear).
+  if (status === "completado" && definition) {
+    const check = validateBranchChoice(definition, input.chosenNext);
+    if (!check.ok) throw new ProtocolBranchError(check.error ?? "Rama invalida");
+  }
+  const storedChoice = status === "completado" && definition && definition.next.length > 1 ? input.chosenNext ?? null : null;
 
   const publicId = `step_${nanoid(10)}`;
   const [event] = await db
@@ -1429,16 +1523,23 @@ export async function completeProtocolStep(input: {
       publicId,
       protocolRunId: run.id,
       stepId: input.stepId,
-      status: input.status ?? "completado",
+      status,
+      chosenNext: storedChoice,
       evidencePathname: input.evidencePathname,
       notesCiphertext: input.notes ? encryptSensitiveText(input.notes) : undefined
     })
     .returning({ publicId: protocolStepEvents.publicId, stepId: protocolStepEvents.stepId, status: protocolStepEvents.status, createdAt: protocolStepEvents.createdAt });
 
+  // Recalcular el estado con el nuevo evento y reflejarlo en la corrida.
+  const nextState = deriveProtocolRunState(steps, [...context.events, { stepId: input.stepId, status, chosenNext: storedChoice }]);
+  if (nextState.status !== "activo" && run.status === "activo") {
+    await db.update(protocolRuns).set({ status: nextState.status === "completado" ? "cerrado" : "bloqueado" }).where(eq(protocolRuns.id, run.id));
+  }
+
   await db.insert(caseEvents).values({
     caseId: run.caseId,
     title: "Paso de protocolo actualizado",
-    bodyCiphertext: encryptSensitiveText(`${event.stepId}:${event.status}`),
+    bodyCiphertext: encryptSensitiveText(`${event.stepId}:${event.status}${storedChoice ? `->${storedChoice}` : ""}`),
     eventType: "protocol.step"
   });
   await db.insert(auditEvents).values({
@@ -1446,10 +1547,17 @@ export async function completeProtocolStep(input: {
     resourceType: "protocol_run",
     resourceId: input.runId,
     reason: "human_confirmed_protocol_step",
-    metadata: { actorId: input.actor.id, stepId: input.stepId, status: event.status }
+    metadata: { actorId: input.actor.id, stepId: input.stepId, status: event.status, chosenNext: storedChoice, runStatus: nextState.status }
   });
 
-  return { id: event.publicId, runId: input.runId, stepId: event.stepId, status: event.status, createdAt: toIso(event.createdAt) };
+  return {
+    id: event.publicId,
+    runId: input.runId,
+    stepId: event.stepId,
+    status: event.status,
+    createdAt: toIso(event.createdAt),
+    state: nextState
+  };
 }
 
 export async function createCaseControlRecord(input:

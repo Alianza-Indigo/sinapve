@@ -1,0 +1,1 @@
+ALTER TABLE "protocol_step_events" ADD COLUMN "chosen_next" text;

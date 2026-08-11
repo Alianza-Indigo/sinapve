@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { resolveActor } from "@/server/auth/session-actor";
-import { completeProtocolStep } from "@/server/data/repository";
+import { completeProtocolStep, ProtocolBranchError } from "@/server/data/repository";
 import { DatabaseNotConfiguredError } from "@/server/db";
 import { hasCapability } from "@/server/domain/access";
 
@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 
 const completeStepSchema = z.object({
   status: z.enum(["completado", "bloqueado"]).default("completado"),
+  chosenNext: z.string().min(1).max(60).optional(),
   evidencePathname: z.string().min(2).max(500).optional(),
   notes: z.string().max(4000).optional()
 });
@@ -28,6 +29,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ run
     return Response.json({ data }, { status: 201 });
   } catch (error) {
     if (error instanceof DatabaseNotConfiguredError) return Response.json({ error: "database_not_configured", message: error.message }, { status: 503 });
+    if (error instanceof ProtocolBranchError) return Response.json({ error: "branch_required", message: error.message }, { status: 400 });
     if (error instanceof Error && error.message === "PROTOCOL_RUN_NOT_FOUND") return Response.json({ error: "not_found" }, { status: 404 });
     throw error;
   }

@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 // Endpoint de salud publico para verificar el despliegue por HTTP. No expone
 // datos ni secretos: solo booleanos de configuracion, conectividad de base y si
 // las migraciones estan aplicadas. Migraciones expectativas al dia de hoy: 9.
-const EXPECTED_MIGRATIONS = 9;
+const EXPECTED_MIGRATIONS = 10;
 
 export async function GET() {
   const database = await getDatabaseHealth().catch(() => ({

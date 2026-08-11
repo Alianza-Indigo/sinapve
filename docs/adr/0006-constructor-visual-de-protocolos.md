@@ -40,9 +40,27 @@ versión.
 
 - El diseño de protocolos ya no requiere desplegar código; queda versionado y
   auditado como cualquier otro cambio de doctrina.
-- La compatibilidad hacia atrás se mantiene: las corridas y el stepper siguen
-  leyendo `steps[]` como una lista lineal.
-- Un grafo con ramas de decisión se aplana a una ruta lineal ordenada por
-  dependencia y `dueMinute`; la ejecución condicional por rama (elegir sucesor en
-  tiempo real) queda fuera de alcance de esta primera versión y requeriría
-  extender el motor de corridas (nuevo ADR).
+- La compatibilidad hacia atrás se mantiene: los pasos compilados siguen siendo
+  `ProtocolStep` válidos, y los protocolos lineales heredados se normalizan a
+  grafo sin migrar datos.
+
+## Ejecución condicional rama por rama
+
+La primera versión aplanaba el grafo a una ruta lineal. Ahora el **motor de
+corridas ejecuta la ramificación condicional**:
+
+- Cada transición compilada conserva su condición (`{ to, condition }`), de modo
+  que una decisión ofrece ramas etiquetadas.
+- `deriveProtocolRunState(steps, events)` (dominio puro) reduce los pasos
+  compilados + los eventos registrados a un estado navegable: recorre desde el
+  inicio siguiendo **solo la rama elegida** en cada decisión, marcando los pasos
+  alcanzados como completados, el detenido como en progreso/bloqueado, lo
+  alcanzable a futuro como pendiente y lo inalcanzable como **omitido**.
+- Al completar una decisión, el operador **elige la rama** (`chosenNext`);
+  `validateBranchChoice` la valida en cliente y servidor. Se persiste en la nueva
+  columna `protocol_step_events.chosen_next` (migración 0009, `EXPECTED_MIGRATIONS`
+  = 10). La corrida se cierra al alcanzar un `fin` y se marca bloqueada si un paso
+  se bloquea.
+- La consola de corrida (`ProtocolRunConsole`) en el expediente carga el estado
+  desde `GET /api/v1/protocol-runs/{runId}` y avanza paso a paso, mostrando las
+  ramas de cada decisión.

@@ -4,12 +4,11 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Clock, Lock, ShieldCheck } from "lucide-react";
 import { Topbar } from "@/components/Topbar";
 import { CaseTimeline } from "@/components/CaseTimeline";
-import { ProtocolStepper } from "@/components/ProtocolStepper";
+import { ProtocolRunConsole } from "@/components/ProtocolRunConsole";
 import { resolveActor } from "@/server/auth/session-actor";
-import { getCase } from "@/server/data/repository";
+import { getActiveProtocolRunForCase, getCase } from "@/server/data/repository";
 import { DatabaseNotConfiguredError } from "@/server/db";
-import { canReadCase, explainAccess } from "@/server/domain/access";
-import { createProtocolRun } from "@/server/domain/protocols";
+import { canReadCase, explainAccess, hasCapability } from "@/server/domain/access";
 
 export default async function CasePage({ params }: { params: Promise<{ caseId: string }> }) {
   const { caseId } = await params;
@@ -72,7 +71,8 @@ export default async function CasePage({ params }: { params: Promise<{ caseId: s
   if (!caseFile) notFound();
   if (!canReadCase(actor, caseFile)) notFound();
 
-  const protocolRun = createProtocolRun(caseFile.id, caseFile.severity);
+  const protocolRun = await getActiveProtocolRunForCase(caseFile.id);
+  const canRunProtocol = hasCapability(actor, "protocol:run");
 
   return (
     <div className="page-shell">
@@ -116,7 +116,7 @@ export default async function CasePage({ params }: { params: Promise<{ caseId: s
             <section className="panel">
               <p className="eyebrow">Protocolo</p>
               <h2>Ruta activa</h2>
-              <ProtocolStepper run={protocolRun} />
+              <ProtocolRunConsole caseId={caseFile.id} initialRun={protocolRun} canRun={canRunProtocol} />
             </section>
           </aside>
         </div>

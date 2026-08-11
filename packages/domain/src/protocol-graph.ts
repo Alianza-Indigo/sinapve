@@ -277,8 +277,13 @@ function topologicalOrder(graph: ProtocolGraph): ProtocolNode[] {
   return ordered;
 }
 
+// Transicion compilada: destino + condicion opcional (etiqueta de rama de una
+// decision). Conservar la condicion permite ejecutar el protocolo rama por rama.
+export type ProtocolTransition = { to: string; condition?: string };
+
 // Paso compilado: superconjunto de ProtocolStep que ademas conserva la topologia
-// del grafo (kind, coordenadas, transiciones) para poder reabrir el editor.
+// del grafo (kind, coordenadas, transiciones) para poder reabrir el editor y
+// ejecutar el protocolo con ramificacion condicional.
 export type CompiledProtocolStep = {
   id: string;
   title: string;
@@ -288,18 +293,18 @@ export type CompiledProtocolStep = {
   kind: ProtocolNodeKind;
   x: number;
   y: number;
-  next: string[];
+  next: ProtocolTransition[];
 };
 
 // Compila el grafo a la lista lineal que persiste `protocol_versions.steps`.
 export function compileProtocolGraph(graph: ProtocolGraph): CompiledProtocolStep[] {
-  const adjacency = new Map<string, string[]>(graph.nodes.map((node) => [node.id, []]));
+  const adjacency = new Map<string, ProtocolTransition[]>(graph.nodes.map((node) => [node.id, []]));
   const seenEdge = new Set<string>();
   for (const edge of graph.edges) {
     const key = `${edge.from}->${edge.to}`;
     if (seenEdge.has(key) || edge.from === edge.to) continue;
     seenEdge.add(key);
-    adjacency.get(edge.from)?.push(edge.to);
+    adjacency.get(edge.from)?.push({ to: edge.to, ...(edge.condition ? { condition: edge.condition } : {}) });
   }
   return topologicalOrder(graph).map((node) => ({
     id: node.id,
@@ -312,6 +317,41 @@ export function compileProtocolGraph(graph: ProtocolGraph): CompiledProtocolStep
     y: node.y,
     next: adjacency.get(node.id) ?? []
   }));
+}
+
+// Normaliza pasos persistidos (jsonb) a CompiledProtocolStep, tolerando tanto el
+// formato nuevo (`next` como transiciones) como el heredado (`next` como ids o
+// pasos lineales sin `next`).
+export function normalizeStoredSteps(raw: Array<Record<string, unknown>>): CompiledProtocolStep[] {
+  return raw.map((step, index) => {
+    const rawNext = step.next;
+    let next: ProtocolTransition[] = [];
+    if (Array.isArray(rawNext)) {
+      next = rawNext
+        .map((value) => {
+          if (typeof value === "string") return { to: value } as ProtocolTransition;
+          if (value && typeof value === "object" && typeof (value as { to?: unknown }).to === "string") {
+            const cond = (value as { condition?: unknown }).condition;
+            return { to: (value as { to: string }).to, ...(typeof cond === "string" ? { condition: cond } : {}) } as ProtocolTransition;
+          }
+          return null;
+        })
+        .filter((value): value is ProtocolTransition => value !== null);
+    }
+    const id = typeof step.id === "string" && step.id ? step.id : `paso_${index + 1}`;
+    const kind = (step.kind as ProtocolNodeKind) ?? (index === 0 ? "inicio" : index === raw.length - 1 ? "fin" : "accion");
+    return {
+      id,
+      title: typeof step.title === "string" ? step.title : id,
+      dueMinute: typeof step.dueMinute === "number" ? step.dueMinute : index * 5,
+      requiredEvidence: Boolean(step.requiredEvidence),
+      ...(typeof step.ownerRole === "string" ? { ownerRole: step.ownerRole as Role } : {}),
+      kind,
+      x: typeof step.x === "number" ? step.x : 120,
+      y: typeof step.y === "number" ? step.y : 80 + index * 120,
+      next
+    };
+  });
 }
 
 // Los pasos compilados siguen siendo ProtocolStep validos para el stepper lineal
@@ -330,38 +370,23 @@ export function compiledToRunSteps(steps: CompiledProtocolStep[]): ProtocolStep[
 // editor. Tolera pasos "lineales" antiguos sin metadatos de grafo: los ordena en
 // una columna y los enlaza en secuencia.
 export function graphFromSteps(code: string, title: string, rawSteps: Array<Record<string, unknown>>): ProtocolGraph {
-  const steps = rawSteps.map((step, index) => {
-    const id = typeof step.id === "string" && step.id ? step.id : `paso_${index + 1}`;
-    const kind = (step.kind as ProtocolNodeKind) ?? (index === 0 ? "inicio" : index === rawSteps.length - 1 ? "fin" : "accion");
-    return {
-      id,
-      kind,
-      title: typeof step.title === "string" ? step.title : id,
-      dueMinute: typeof step.dueMinute === "number" ? step.dueMinute : index * 5,
-      requiredEvidence: Boolean(step.requiredEvidence),
-      ownerRole: typeof step.ownerRole === "string" ? (step.ownerRole as Role) : undefined,
-      x: typeof step.x === "number" ? step.x : 120,
-      y: typeof step.y === "number" ? step.y : 80 + index * 120,
-      next: Array.isArray(step.next) ? (step.next as unknown[]).filter((value): value is string => typeof value === "string") : undefined
-    };
-  });
-
+  const steps = normalizeStoredSteps(rawSteps);
   const idSet = new Set(steps.map((step) => step.id));
   const nodes: ProtocolNode[] = steps.map(({ next: _next, ...node }) => node);
 
   const edges: ProtocolEdge[] = [];
   const seen = new Set<string>();
-  const addEdge = (from: string, to: string) => {
+  const addEdge = (from: string, to: string, condition?: string) => {
     const key = `${from}->${to}`;
     if (seen.has(key) || from === to || !idSet.has(to)) return;
     seen.add(key);
-    edges.push({ id: `edge_${edges.length + 1}`, from, to });
+    edges.push({ id: `edge_${edges.length + 1}`, from, to, ...(condition ? { condition } : {}) });
   };
 
-  const anyHasNext = steps.some((step) => step.next && step.next.length > 0);
+  const anyHasNext = steps.some((step) => step.next.length > 0);
   if (anyHasNext) {
     for (const step of steps) {
-      for (const target of step.next ?? []) addEdge(step.id, target);
+      for (const transition of step.next) addEdge(step.id, transition.to, transition.condition);
     }
   } else {
     // Pasos lineales heredados: enlazar en secuencia.
@@ -371,4 +396,148 @@ export function graphFromSteps(code: string, title: string, rawSteps: Array<Reco
   }
 
   return { code, title, nodes, edges };
+}
+
+// ---------------------------------------------------------------------------
+// Motor de corridas: ejecucion condicional rama por rama.
+// ---------------------------------------------------------------------------
+
+export type ProtocolRunStepStatus = "pendiente" | "en_progreso" | "completado" | "bloqueado" | "omitido";
+
+// Evento de paso tal como se persiste, en orden cronologico (mas antiguo primero).
+export type ProtocolRunEvent = {
+  stepId: string;
+  status: "completado" | "bloqueado";
+  chosenNext?: string | null;
+};
+
+export type ProtocolRunStepView = {
+  id: string;
+  title: string;
+  dueMinute: number;
+  requiredEvidence: boolean;
+  ownerRole?: Role;
+  kind: ProtocolNodeKind;
+  status: ProtocolRunStepStatus;
+  transitions: ProtocolTransition[];
+};
+
+export type ProtocolRunState = {
+  status: "activo" | "completado" | "bloqueado";
+  activeStepId: string | null;
+  // Ramas que el operador debe elegir para avanzar (solo si el paso activo es una
+  // decision con mas de una transicion).
+  branches: ProtocolTransition[];
+  steps: ProtocolRunStepView[];
+};
+
+// Dado un paso, decide que transicion se toma con el evento registrado: para una
+// decision con varias ramas exige `chosenNext`; para un paso lineal toma la unica.
+function chosenTransition(step: CompiledProtocolStep, event: ProtocolRunEvent | undefined): string | null {
+  if (step.next.length === 0) return null;
+  if (step.next.length === 1) return step.next[0].to;
+  const chosen = event?.chosenNext;
+  if (chosen && step.next.some((transition) => transition.to === chosen)) return chosen;
+  return null; // decision sin rama elegida -> no avanza
+}
+
+// Reduce los pasos compilados + los eventos a un estado de corrida navegable.
+// Recorre desde el inicio siguiendo solo las ramas elegidas; los pasos alcanzados
+// se marcan completado, el paso detenido en_progreso/bloqueado, lo alcanzable a
+// futuro pendiente y lo inalcanzable omitido.
+export function deriveProtocolRunState(steps: CompiledProtocolStep[], events: ProtocolRunEvent[]): ProtocolRunState {
+  const byId = new Map(steps.map((step) => [step.id, step]));
+  const lastEvent = new Map<string, ProtocolRunEvent>();
+  for (const event of events) lastEvent.set(event.stepId, event); // el ultimo gana
+
+  const start = steps.find((step) => step.kind === "inicio")?.id ?? steps[0]?.id ?? null;
+
+  const completed = new Set<string>();
+  let active: string | null = null;
+  let status: ProtocolRunState["status"] = "activo";
+
+  const guard = new Set<string>();
+  let current: string | null = start;
+  while (current && !guard.has(current)) {
+    guard.add(current);
+    const step = byId.get(current);
+    const event = lastEvent.get(current);
+    if (!step || !event) {
+      active = current;
+      break;
+    }
+    if (event.status === "bloqueado") {
+      active = current;
+      status = "bloqueado";
+      break;
+    }
+    // completado
+    if (step.next.length === 0) {
+      completed.add(current);
+      active = null;
+      status = "completado";
+      break;
+    }
+    const nextId = chosenTransition(step, event);
+    if (!nextId) {
+      // Decision completada sin rama valida: sigue activa esperando eleccion.
+      active = current;
+      break;
+    }
+    completed.add(current);
+    current = nextId;
+  }
+
+  // Alcanzables hacia adelante desde el paso activo (respetando ramas ya
+  // decididas; en decisiones sin decidir se exploran todas).
+  const reachable = new Set<string>();
+  if (active) {
+    const stack = [active];
+    while (stack.length > 0) {
+      const id = stack.pop() as string;
+      if (reachable.has(id)) continue;
+      reachable.add(id);
+      const step = byId.get(id);
+      if (!step) continue;
+      const event = lastEvent.get(id);
+      const decided = step.next.length > 1 ? chosenTransition(step, event) : null;
+      const follow = decided ? [decided] : step.next.map((transition) => transition.to);
+      for (const target of follow) stack.push(target);
+    }
+  }
+
+  const views: ProtocolRunStepView[] = steps.map((step) => {
+    let stepStatus: ProtocolRunStepStatus;
+    if (step.id === active) stepStatus = status === "bloqueado" ? "bloqueado" : "en_progreso";
+    else if (completed.has(step.id)) stepStatus = "completado";
+    else if (reachable.has(step.id)) stepStatus = "pendiente";
+    else stepStatus = "omitido";
+    return {
+      id: step.id,
+      title: step.title,
+      dueMinute: step.dueMinute,
+      requiredEvidence: step.requiredEvidence,
+      ...(step.ownerRole ? { ownerRole: step.ownerRole } : {}),
+      kind: step.kind,
+      status: stepStatus,
+      transitions: step.next
+    };
+  });
+
+  const activeStep = active ? byId.get(active) : undefined;
+  const branches = activeStep && activeStep.next.length > 1 ? activeStep.next : [];
+
+  return { status, activeStepId: active, branches, steps: views };
+}
+
+// Valida que una eleccion de rama sea legal al completar un paso: las decisiones
+// exigen una rama existente; los pasos con una sola salida la ignoran.
+export function validateBranchChoice(step: CompiledProtocolStep, chosenNext: string | null | undefined): { ok: boolean; error?: string } {
+  if (step.next.length > 1) {
+    if (!chosenNext) return { ok: false, error: "Esta decision requiere elegir una rama para avanzar." };
+    if (!step.next.some((transition) => transition.to === chosenNext)) {
+      return { ok: false, error: "La rama elegida no es una transicion valida de este paso." };
+    }
+  }
+  return { ok: true };
 }
