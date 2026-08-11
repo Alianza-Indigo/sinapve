@@ -43,15 +43,41 @@ describe("certified metrics", () => {
     expect(slaCompliance(cases)).toBe(100);
   });
 
-  it("builds the six required initial dashboard widgets", () => {
+  it("builds the 32 required dashboard widgets from the PRD catalog", () => {
     const widgets = buildCertifiedWidgets(reports, cases);
     expect(widgets.map((widget) => widget.id)).toEqual([
       "G01_CASES_OVER_TIME",
+      "G02_REPORTS_VS_CONFIRMED",
+      "G03_SEVERITY_DISTRIBUTION",
       "G04_FIRST_RESPONSE",
       "G05_SLA_COMPLIANCE",
+      "G06_ATTENTION_FUNNEL",
       "G07_OPEN_CASE_AGE",
+      "G08_RECURRENCE",
+      "G09_VIOLENCE_CATEGORIES",
       "G10_TERRITORIAL_RISK",
-      "G19_CERTIFICATION_COVERAGE"
+      "G11_INRE_TREND",
+      "G12_INRE_FACTORS",
+      "G13_RISK_CAPACITY_MATRIX",
+      "G14_AI_ALERTS",
+      "G15_APVE_WORKLOAD",
+      "G16_EMIR_CAPACITY",
+      "G17_ESCALATIONS",
+      "G18_EXTERNAL_RESPONSE_TIME",
+      "G19_CERTIFICATION_COVERAGE",
+      "G20_TRAINING_PROGRESS",
+      "G21_RECERTIFICATIONS",
+      "G22_AUDIT_COMPLIANCE",
+      "G23_DATA_QUALITY",
+      "G24_SAFETY_PERCEPTION",
+      "G25_ADJUSTED_INCIDENCE",
+      "G26_NEURODIVERGENT_INCLUSION",
+      "G27_SCHOOL_RETENTION",
+      "G28_DID_IMPACT",
+      "G29_TERRITORIAL_COVERAGE",
+      "G30_BUDGET_EXECUTION",
+      "G31_CAMPAIGNS",
+      "G32_SATISFACTION_TRUST"
     ]);
   });
 

@@ -22,7 +22,7 @@ import {
   trainingPrograms
 } from "../db/schema";
 import { suggestSeverity } from "../domain/protocols";
-import type { CaseFile, CaseTimelineEvent, HelpReport, PlatformModuleId, PlatformModuleSummary, PlatformRecord, ReportMode } from "../domain/types";
+import type { Actor, CaseFile, CaseState, CaseTimelineEvent, HelpReport, PlatformModuleId, PlatformModuleSummary, PlatformRecord, ReportMode, Severity } from "../domain/types";
 
 export type LiveDataStatus = {
   databaseConfigured: boolean;
@@ -57,6 +57,38 @@ function toIso(value: Date | string | null | undefined) {
 function readMetadataString(metadata: Record<string, unknown>, key: string, fallback = "") {
   const value = metadata[key];
   return typeof value === "string" ? value : fallback;
+}
+
+async function findCaseRow(caseId: string) {
+  const db = getDb();
+  const [caseRow] = await db
+    .select({ id: cases.id, publicId: cases.publicId, folio: cases.folio, organizationId: cases.organizationId, severity: cases.severity })
+    .from(cases)
+    .where(or(eq(cases.publicId, caseId), eq(cases.folio, caseId)))
+    .limit(1);
+  return caseRow ?? null;
+}
+
+async function findOrganizationRow(organizationPublicId: string) {
+  const db = getDb();
+  const [organization] = await db.select().from(organizations).where(eq(organizations.publicId, organizationPublicId)).limit(1);
+  return organization ?? null;
+}
+
+async function findReportRow(reportId: string) {
+  const db = getDb();
+  const [report] = await db
+    .select({
+      id: reports.id,
+      publicId: reports.publicId,
+      folio: reports.folio,
+      organizationId: reports.organizationId,
+      suggestedSeverity: reports.suggestedSeverity
+    })
+    .from(reports)
+    .where(or(eq(reports.publicId, reportId), eq(reports.folio, reportId)))
+    .limit(1);
+  return report ?? null;
 }
 
 export async function listReports() {
@@ -640,4 +672,444 @@ export async function listPublishedResources(): Promise<PlatformRecord[]> {
     .limit(100);
 
   return rows.map(platformRecord);
+}
+
+export async function createCaseFromReport(input: {
+  reportId: string;
+  title: string;
+  slaMinutes: number;
+  protectionSummary?: string;
+  actor: Actor;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+
+  const db = getDb();
+  const report = await findReportRow(input.reportId);
+  if (!report) throw new Error("REPORT_NOT_FOUND");
+
+  const publicId = `case_${nanoid(10)}`;
+  const folio = `CASO-${nanoid(5).toUpperCase()}-${nanoid(4).toUpperCase()}`;
+  const [caseRow] = await db
+    .insert(cases)
+    .values({
+      publicId,
+      folio,
+      reportId: report.id,
+      organizationId: report.organizationId,
+      title: input.title,
+      state: "en_triaje",
+      severity: report.suggestedSeverity,
+      protectionSummaryCiphertext: input.protectionSummary ?? "Pendiente de resumen de proteccion.",
+      firstResponseMinutes: 0,
+      slaMinutes: input.slaMinutes
+    })
+    .returning({ id: cases.id, publicId: cases.publicId, folio: cases.folio });
+
+  await db.update(reports).set({ status: "convertido_caso" }).where(eq(reports.id, report.id));
+  await db.insert(caseEvents).values({
+    caseId: caseRow.id,
+    title: "Expediente abierto",
+    bodyCiphertext: input.protectionSummary ?? "Expediente creado desde reporte.",
+    eventType: "case.open"
+  });
+  await db.insert(auditEvents).values({
+    action: "case.create_from_report",
+    resourceType: "case",
+    resourceId: caseRow.publicId,
+    reason: "human_triage",
+    metadata: { actorId: input.actor.id, reportId: report.publicId }
+  });
+
+  return { id: caseRow.publicId, folio: caseRow.folio };
+}
+
+export async function updateCaseState(input: {
+  caseId: string;
+  state: CaseState;
+  protectionSummary?: string;
+  actor: Actor;
+  reason: string;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+
+  const db = getDb();
+  const caseRow = await findCaseRow(input.caseId);
+  if (!caseRow) throw new Error("CASE_NOT_FOUND");
+
+  await db
+    .update(cases)
+    .set({
+      state: input.state,
+      protectionSummaryCiphertext: input.protectionSummary,
+      closedAt: input.state === "cerrado" ? new Date() : null
+    })
+    .where(eq(cases.id, caseRow.id));
+
+  await db.insert(caseEvents).values({
+    caseId: caseRow.id,
+    title: `Estado actualizado a ${input.state}`,
+    bodyCiphertext: input.reason,
+    eventType: "case.state_change"
+  });
+  await db.insert(auditEvents).values({
+    action: "case.update_state",
+    resourceType: "case",
+    resourceId: caseRow.publicId,
+    reason: input.reason,
+    metadata: { actorId: input.actor.id, state: input.state }
+  });
+
+  return getCase(caseRow.publicId);
+}
+
+export async function addCaseTimelineEvent(input: {
+  caseId: string;
+  title: string;
+  detail: string;
+  eventType: string;
+  actor: Actor;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+
+  const db = getDb();
+  const caseRow = await findCaseRow(input.caseId);
+  if (!caseRow) throw new Error("CASE_NOT_FOUND");
+
+  const [event] = await db
+    .insert(caseEvents)
+    .values({
+      caseId: caseRow.id,
+      title: input.title,
+      bodyCiphertext: input.detail,
+      eventType: input.eventType
+    })
+    .returning({ id: caseEvents.id, createdAt: caseEvents.createdAt });
+
+  await db.insert(auditEvents).values({
+    action: "case_event.create",
+    resourceType: "case",
+    resourceId: caseRow.publicId,
+    reason: input.eventType,
+    metadata: { actorId: input.actor.id, eventId: event.id }
+  });
+
+  return { id: event.id, at: toIso(event.createdAt), title: input.title };
+}
+
+export async function createInterventionPlan(input: {
+  caseId: string;
+  title: string;
+  goals?: Array<Record<string, unknown>>;
+  adjustments?: Record<string, unknown>;
+  nextReviewAt?: string;
+  actor: Actor;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+
+  const db = getDb();
+  const caseRow = await findCaseRow(input.caseId);
+  if (!caseRow) throw new Error("CASE_NOT_FOUND");
+
+  const publicId = `plan_${nanoid(10)}`;
+  const [plan] = await db
+    .insert(interventionPlans)
+    .values({
+      publicId,
+      caseId: caseRow.id,
+      title: input.title,
+      goals: input.goals ?? [],
+      adjustments: input.adjustments ?? {},
+      nextReviewAt: input.nextReviewAt ? new Date(input.nextReviewAt) : null
+    })
+    .returning({ publicId: interventionPlans.publicId, title: interventionPlans.title, status: interventionPlans.status });
+
+  await db.insert(caseEvents).values({
+    caseId: caseRow.id,
+    title: "Plan de intervencion creado",
+    bodyCiphertext: input.title,
+    eventType: "intervention.create"
+  });
+  await db.insert(auditEvents).values({
+    action: "intervention_plan.create",
+    resourceType: "case",
+    resourceId: caseRow.publicId,
+    reason: "human_intervention_plan",
+    metadata: { actorId: input.actor.id, planId: plan.publicId }
+  });
+
+  return plan;
+}
+
+export async function createReferral(input: {
+  caseId: string;
+  destinationType: string;
+  destinationName: string;
+  requiredAckBy?: string;
+  metadata?: Record<string, unknown>;
+  actor: Actor;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+
+  const db = getDb();
+  const caseRow = await findCaseRow(input.caseId);
+  if (!caseRow) throw new Error("CASE_NOT_FOUND");
+
+  const publicId = `ref_${nanoid(10)}`;
+  const [referral] = await db
+    .insert(referrals)
+    .values({
+      publicId,
+      caseId: caseRow.id,
+      destinationType: input.destinationType,
+      destinationName: input.destinationName,
+      requiredAckBy: input.requiredAckBy ? new Date(input.requiredAckBy) : null,
+      metadata: input.metadata ?? {}
+    })
+    .returning({ publicId: referrals.publicId, status: referrals.status });
+
+  await db.update(cases).set({ state: "escalado" }).where(eq(cases.id, caseRow.id));
+  await db.insert(caseEvents).values({
+    caseId: caseRow.id,
+    title: "Escalamiento creado",
+    bodyCiphertext: input.destinationName,
+    eventType: "referral.create"
+  });
+  await db.insert(auditEvents).values({
+    action: "referral.create",
+    resourceType: "case",
+    resourceId: caseRow.publicId,
+    reason: "closed_loop_referral",
+    metadata: { actorId: input.actor.id, referralId: referral.publicId }
+  });
+
+  return referral;
+}
+
+async function ensureProtocolVersion(severity: Severity) {
+  const db = getDb();
+  const code = severity === "critica" ? "critical_response_v1" : "school_protection_v1";
+  const [existing] = await db
+    .select({ id: protocolVersions.id, code: protocolVersions.code, version: protocolVersions.version })
+    .from(protocolVersions)
+    .where(and(eq(protocolVersions.code, code), eq(protocolVersions.active, true)))
+    .limit(1);
+  if (existing) return existing;
+
+  const [created] = await db
+    .insert(protocolVersions)
+    .values({
+      code,
+      version: 1,
+      title: severity === "critica" ? "Respuesta critica escolar" : "Proteccion escolar",
+      active: true,
+      steps: [
+        { id: "safety", title: "Confirmar seguridad inmediata", dueMinute: 5, requiredEvidence: true },
+        { id: "notify-direction", title: "Notificar direccion y responsable APVE", dueMinute: 10, requiredEvidence: true },
+        { id: "safe-contact", title: "Definir contacto seguro", dueMinute: 15, requiredEvidence: false },
+        { id: "open-case", title: "Preservar registros", dueMinute: 20, requiredEvidence: true },
+        { id: "decision", title: "Documentar decision y escalamiento", dueMinute: 30, requiredEvidence: true }
+      ]
+    })
+    .returning({ id: protocolVersions.id, code: protocolVersions.code, version: protocolVersions.version });
+  return created;
+}
+
+export async function startPersistedProtocolRun(input: { caseId: string; actor: Actor }) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+
+  const db = getDb();
+  const caseRow = await findCaseRow(input.caseId);
+  if (!caseRow) throw new Error("CASE_NOT_FOUND");
+
+  const version = await ensureProtocolVersion(caseRow.severity);
+  const workflowRunId = `workflow_pending_${nanoid(10)}`;
+  const [run] = await db
+    .insert(protocolRuns)
+    .values({
+      caseId: caseRow.id,
+      protocolVersionId: version.id,
+      workflowRunId,
+      status: "activo"
+    })
+    .returning({ id: protocolRuns.id, startedAt: protocolRuns.startedAt, status: protocolRuns.status, workflowRunId: protocolRuns.workflowRunId });
+
+  await db.insert(caseEvents).values({
+    caseId: caseRow.id,
+    title: "Protocolo iniciado",
+    bodyCiphertext: version.code,
+    eventType: "protocol.start"
+  });
+  await db.insert(auditEvents).values({
+    action: "protocol_run.start",
+    resourceType: "case",
+    resourceId: caseRow.publicId,
+    reason: "human_confirmed_protocol",
+    metadata: { actorId: input.actor.id, protocolCode: version.code, workflowRunId }
+  });
+
+  return {
+    id: run.id,
+    caseId: caseRow.publicId,
+    protocolCode: version.code,
+    version: version.version,
+    startedAt: toIso(run.startedAt),
+    status: run.status,
+    workflowRunId: run.workflowRunId
+  };
+}
+
+export async function createTrainingProgram(input: {
+  title: string;
+  audienceRole: string;
+  requiredForCertification?: boolean;
+  metadata?: Record<string, unknown>;
+  actor: Actor;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+
+  const db = getDb();
+  const publicId = `train_${nanoid(10)}`;
+  const [program] = await db
+    .insert(trainingPrograms)
+    .values({
+      publicId,
+      title: input.title,
+      audienceRole: input.audienceRole,
+      requiredForCertification: input.requiredForCertification ?? false,
+      metadata: input.metadata ?? {}
+    })
+    .returning({ publicId: trainingPrograms.publicId, title: trainingPrograms.title, status: trainingPrograms.status });
+
+  await db.insert(auditEvents).values({
+    action: "training_program.create",
+    resourceType: "training_program",
+    resourceId: program.publicId,
+    reason: "training_catalog_update",
+    metadata: { actorId: input.actor.id }
+  });
+
+  return program;
+}
+
+export async function createCommunityInitiative(input: {
+  organizationPublicId?: string;
+  title: string;
+  initiativeType: string;
+  safeguards?: Record<string, unknown>;
+  startsAt?: string;
+  endsAt?: string;
+  actor: Actor;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+
+  const db = getDb();
+  const organization = input.organizationPublicId ? await findOrganizationRow(input.organizationPublicId) : null;
+  if (input.organizationPublicId && !organization) throw new Error("ORGANIZATION_NOT_FOUND");
+
+  const publicId = `comm_${nanoid(10)}`;
+  const [initiative] = await db
+    .insert(communityInitiatives)
+    .values({
+      publicId,
+      organizationId: organization?.id,
+      title: input.title,
+      initiativeType: input.initiativeType,
+      safeguards: input.safeguards ?? {},
+      startsAt: input.startsAt ? new Date(input.startsAt) : null,
+      endsAt: input.endsAt ? new Date(input.endsAt) : null
+    })
+    .returning({ publicId: communityInitiatives.publicId, title: communityInitiatives.title, status: communityInitiatives.status });
+
+  await db.insert(auditEvents).values({
+    action: "community_initiative.create",
+    resourceType: "community_initiative",
+    resourceId: initiative.publicId,
+    reason: "community_participation",
+    metadata: { actorId: input.actor.id }
+  });
+
+  return initiative;
+}
+
+export async function createGovernanceRecord(
+  moduleId: PlatformModuleId,
+  input: { title: string; status?: string; metadata?: Record<string, unknown>; actor: Actor; [key: string]: unknown }
+) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+
+  const db = getDb();
+  const publicId = `${moduleId.replace("-", "_")}_${nanoid(10)}`;
+
+  if (moduleId === "audit") {
+    const [finding] = await db
+      .insert(auditFindings)
+      .values({
+        publicId,
+        title: input.title,
+        resourceType: String(input.resourceType ?? "platform"),
+        resourceId: String(input.resourceId ?? "general"),
+        severity: String(input.severity ?? "media"),
+        correctivePlan: input.metadata ?? {}
+      })
+      .returning({ publicId: auditFindings.publicId, title: auditFindings.title, status: auditFindings.status });
+    return finding;
+  }
+
+  if (moduleId === "informes") {
+    const [report] = await db
+      .insert(generatedReports)
+      .values({
+        publicId,
+        title: input.title,
+        reportType: String(input.reportType ?? "ejecutivo"),
+        scope: input.metadata ?? {},
+        narrativeCiphertext: typeof input.narrative === "string" ? input.narrative : null
+      })
+      .returning({ publicId: generatedReports.publicId, title: generatedReports.title, status: generatedReports.status });
+    return report;
+  }
+
+  if (moduleId === "configuration") {
+    const [config] = await db
+      .insert(systemConfigurations)
+      .values({
+        publicId,
+        configKey: input.title,
+        scope: input.metadata ?? {},
+        value: typeof input.value === "object" && input.value !== null ? (input.value as Record<string, unknown>) : {}
+      })
+      .returning({ publicId: systemConfigurations.publicId, title: systemConfigurations.configKey, status: systemConfigurations.status });
+    return config;
+  }
+
+  if (moduleId === "public-portal") {
+    const [resource] = await db
+      .insert(publicResources)
+      .values({
+        publicId,
+        title: input.title,
+        resourceType: String(input.resourceType ?? "material"),
+        audience: String(input.audience ?? "publico"),
+        metadata: input.metadata ?? {},
+        status: input.status ?? "borrador",
+        publishedAt: input.status === "publicado" ? new Date() : null
+      })
+      .returning({ publicId: publicResources.publicId, title: publicResources.title, status: publicResources.status });
+    return resource;
+  }
+
+  if (moduleId === "notifications") {
+    const [notification] = await db
+      .insert(notifications)
+      .values({
+        publicId,
+        priority: String(input.priority ?? "informativa"),
+        channel: String(input.channel ?? "in_app"),
+        safeSummary: input.title
+      })
+      .returning({ publicId: notifications.publicId, title: notifications.safeSummary, status: notifications.status });
+    return notification;
+  }
+
+  throw new Error("UNSUPPORTED_MODULE_OPERATION");
 }

@@ -1,4 +1,4 @@
-import type { CaseFile, HelpReport, MetricWidget } from "./types";
+import type { CaseFile, HelpReport, MetricWidget, Severity } from "./types";
 
 export function firstResponseMinutes(caseFile: Pick<CaseFile, "firstResponseMinutes">) {
   return caseFile.firstResponseMinutes;
@@ -28,6 +28,33 @@ export function openCaseAgeBuckets(cases: CaseFile[], now = new Date()) {
   return buckets;
 }
 
+function severityWeight(severity: Severity) {
+  if (severity === "critica") return 100;
+  if (severity === "grave") return 75;
+  if (severity === "moderada") return 50;
+  return 25;
+}
+
+function bySeverity(cases: CaseFile[]) {
+  const counts: Record<Severity, number> = { leve: 0, moderada: 0, grave: 0, critica: 0 };
+  for (const item of cases) counts[item.severity] += 1;
+  return Object.entries(counts).map(([label, value]) => ({ label, value }));
+}
+
+function zeroWidget(id: string, title: string, metricCodes: string[], updatedAt: string): MetricWidget {
+  return {
+    id,
+    title,
+    metricCodes,
+    visualization: "line",
+    valueLabel: "0",
+    quality: 0,
+    updatedAt,
+    privacySuppressedCells: 0,
+    series: []
+  };
+}
+
 export function buildCertifiedWidgets(reports: HelpReport[], cases: CaseFile[]): MetricWidget[] {
   const updatedAt = new Date().toISOString();
   const averageFirstResponse =
@@ -35,8 +62,10 @@ export function buildCertifiedWidgets(reports: HelpReport[], cases: CaseFile[]):
   const sla = slaCompliance(cases);
   const territorialRisk = Math.max(0, Math.min(100, Math.round(reportConversionRate(reports, cases))));
   const quality = reports.length + cases.length === 0 ? 0 : 95;
+  const openCases = cases.filter((item) => item.state !== "cerrado");
+  const criticalCases = cases.filter((item) => item.severity === "critica").length;
 
-  return [
+  const widgets: MetricWidget[] = [
     {
       id: "G01_CASES_OVER_TIME",
       title: "Casos por periodo",
@@ -47,6 +76,31 @@ export function buildCertifiedWidgets(reports: HelpReport[], cases: CaseFile[]):
       updatedAt,
       privacySuppressedCells: 0,
       series: cases.map((item) => ({ label: item.folio, value: 1 }))
+    },
+    {
+      id: "G02_REPORTS_VS_CONFIRMED",
+      title: "Reportes vs. casos confirmados",
+      metricCodes: ["reports_received", "cases_confirmed"],
+      visualization: "histogram",
+      valueLabel: `${reports.length}/${cases.length}`,
+      quality,
+      updatedAt,
+      privacySuppressedCells: 0,
+      series: [
+        { label: "Reportes", value: reports.length },
+        { label: "Casos", value: cases.length }
+      ]
+    },
+    {
+      id: "G03_SEVERITY_DISTRIBUTION",
+      title: "Distribucion por severidad",
+      metricCodes: ["case_severity"],
+      visualization: "histogram",
+      valueLabel: `${criticalCases} criticos`,
+      quality,
+      updatedAt,
+      privacySuppressedCells: 0,
+      series: bySeverity(cases)
     },
     {
       id: "G04_FIRST_RESPONSE",
@@ -71,16 +125,35 @@ export function buildCertifiedWidgets(reports: HelpReport[], cases: CaseFile[]):
       series: cases.length === 0 ? [] : [{ label: "SLA", value: sla, target: 90 }]
     },
     {
+      id: "G06_ATTENTION_FUNNEL",
+      title: "Embudo de atencion",
+      metricCodes: ["report_to_case_conversion"],
+      visualization: "histogram",
+      valueLabel: `${reportConversionRate(reports, cases)}%`,
+      quality,
+      updatedAt,
+      privacySuppressedCells: 0,
+      series: [
+        { label: "Reporte", value: reports.length },
+        { label: "Triaje", value: reports.filter((item) => item.status !== "recibido").length },
+        { label: "Caso", value: cases.length },
+        { label: "Seguimiento", value: cases.filter((item) => item.state === "en_seguimiento").length },
+        { label: "Cierre", value: cases.filter((item) => item.state === "cerrado").length }
+      ]
+    },
+    {
       id: "G07_OPEN_CASE_AGE",
       title: "Antiguedad de casos abiertos",
       metricCodes: ["open_case_age"],
       visualization: "histogram",
-      valueLabel: `${cases.filter((item) => item.state !== "cerrado").length} abiertos`,
+      valueLabel: `${openCases.length} abiertos`,
       quality,
       updatedAt,
       privacySuppressedCells: 0,
-      series: openCaseAgeBuckets(cases)
+      series: openCaseAgeBuckets(openCases)
     },
+    zeroWidget("G08_RECURRENCE", "Reincidencia", ["case_recurrence"], updatedAt),
+    zeroWidget("G09_VIOLENCE_CATEGORIES", "Categorias de violencia", ["violence_category_rate"], updatedAt),
     {
       id: "G10_TERRITORIAL_RISK",
       title: "Mapa territorial de riesgo",
@@ -89,19 +162,17 @@ export function buildCertifiedWidgets(reports: HelpReport[], cases: CaseFile[]):
       valueLabel: `${territorialRisk}/100`,
       quality,
       updatedAt,
-      privacySuppressedCells: reports.length < 5 ? reports.length : 0,
-      series: reports.map((item) => ({
-        label: item.municipality || item.state || item.organizationId,
-        value:
-          item.suggestedSeverity === "critica"
-            ? 100
-            : item.suggestedSeverity === "grave"
-              ? 75
-              : item.suggestedSeverity === "moderada"
-                ? 50
-                : 25
-      }))
+      privacySuppressedCells: reports.length > 0 && reports.length < 5 ? reports.length : 0,
+      series: reports.map((item) => ({ label: item.municipality || item.state || item.organizationId, value: severityWeight(item.suggestedSeverity) }))
     },
+    zeroWidget("G11_INRE_TREND", "Tendencia INRE", ["inre_trend"], updatedAt),
+    zeroWidget("G12_INRE_FACTORS", "Factores del INRE", ["inre_factor_contribution"], updatedAt),
+    zeroWidget("G13_RISK_CAPACITY_MATRIX", "Matriz riesgo-capacidad", ["risk_capacity"], updatedAt),
+    zeroWidget("G14_AI_ALERTS", "Alertas IA", ["ai_alerts"], updatedAt),
+    zeroWidget("G15_APVE_WORKLOAD", "Carga de trabajo APVE", ["apve_weighted_cases"], updatedAt),
+    zeroWidget("G16_EMIR_CAPACITY", "Capacidad EMIR", ["emir_capacity"], updatedAt),
+    zeroWidget("G17_ESCALATIONS", "Escalamientos", ["referral_flow"], updatedAt),
+    zeroWidget("G18_EXTERNAL_RESPONSE_TIME", "Tiempo de respuesta externa", ["external_ack_minutes"], updatedAt),
     {
       id: "G19_CERTIFICATION_COVERAGE",
       title: "Cobertura de certificacion",
@@ -112,8 +183,23 @@ export function buildCertifiedWidgets(reports: HelpReport[], cases: CaseFile[]):
       updatedAt,
       privacySuppressedCells: 0,
       series: []
-    }
+    },
+    zeroWidget("G20_TRAINING_PROGRESS", "Progreso de formacion", ["training_progress"], updatedAt),
+    zeroWidget("G21_RECERTIFICATIONS", "Proximas recertificaciones", ["recertification_due"], updatedAt),
+    zeroWidget("G22_AUDIT_COMPLIANCE", "Cumplimiento de auditoria", ["audit_closed_ratio"], updatedAt),
+    zeroWidget("G23_DATA_QUALITY", "Calidad de datos", ["data_quality"], updatedAt),
+    zeroWidget("G24_SAFETY_PERCEPTION", "Percepcion de seguridad", ["ipse"], updatedAt),
+    zeroWidget("G25_ADJUSTED_INCIDENCE", "Incidencia ajustada", ["adjusted_incidence"], updatedAt),
+    zeroWidget("G26_NEURODIVERGENT_INCLUSION", "Inclusion neurodivergente", ["reasonable_adjustments"], updatedAt),
+    zeroWidget("G27_SCHOOL_RETENTION", "Permanencia escolar", ["school_retention"], updatedAt),
+    zeroWidget("G28_DID_IMPACT", "Impacto DiD", ["difference_in_differences"], updatedAt),
+    zeroWidget("G29_TERRITORIAL_COVERAGE", "Cobertura territorial", ["active_schools"], updatedAt),
+    zeroWidget("G30_BUDGET_EXECUTION", "Ejecucion presupuestal", ["budget_execution"], updatedAt),
+    zeroWidget("G31_CAMPAIGNS", "Campanas", ["campaign_reach"], updatedAt),
+    zeroWidget("G32_SATISFACTION_TRUST", "Satisfaccion y confianza", ["trust_score"], updatedAt)
   ];
+
+  return widgets;
 }
 
 export function reportConversionRate(reports: HelpReport[], cases: CaseFile[]) {

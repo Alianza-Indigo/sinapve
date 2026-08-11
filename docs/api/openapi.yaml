@@ -91,6 +91,56 @@ paths:
           description: User scope cannot access this case.
         "503":
           description: Live database environment is not linked.
+    patch:
+      summary: Update authorized case state and protection summary.
+      operationId: updateCase
+      security:
+        - SinapveInstitutionalHeaders: []
+      responses:
+        "200":
+          description: Updated case.
+        "401":
+          description: Missing verified institutional headers.
+        "403":
+          description: User scope cannot update this case.
+  /cases:
+    post:
+      summary: Open a case from a report after human triage.
+      operationId: createCaseFromReport
+      security:
+        - SinapveInstitutionalHeaders: []
+      responses:
+        "201":
+          description: Case opened and source report converted.
+        "404":
+          description: Source report not found.
+  /cases/{caseId}/events:
+    post:
+      summary: Append an auditable timeline event to a case.
+      operationId: createCaseEvent
+      security:
+        - SinapveInstitutionalHeaders: []
+      responses:
+        "201":
+          description: Case event created.
+  /cases/{caseId}/intervention-plans:
+    post:
+      summary: Create an intervention plan for a case.
+      operationId: createInterventionPlan
+      security:
+        - SinapveInstitutionalHeaders: []
+      responses:
+        "201":
+          description: Intervention plan created.
+  /cases/{caseId}/referrals:
+    post:
+      summary: Create a closed-loop referral/escalation for a case.
+      operationId: createReferral
+      security:
+        - SinapveInstitutionalHeaders: []
+      responses:
+        "201":
+          description: Referral created and case escalated.
   /cases/{caseId}/evidence:
     post:
       summary: Upload authorized evidence to private Vercel Blob storage.
@@ -203,3 +253,22 @@ paths:
           description: User role cannot read this module.
         "404":
           description: Unknown module.
+    post:
+      summary: Create a supported institutional module record.
+      operationId: createModuleRecord
+      security:
+        - SinapveInstitutionalHeaders: []
+      responses:
+        "201":
+          description: Module record created.
+        "405":
+          description: Module does not support generic creation.
+  /search:
+    get:
+      summary: Universal search across authorized reports, cases and module records.
+      operationId: universalSearch
+      security:
+        - SinapveInstitutionalHeaders: []
+      responses:
+        "200":
+          description: Authorized search results.

@@ -1,9 +1,8 @@
 import { buildAuditEvent } from "@/server/audit";
 import { getActorFromHeaders } from "@/server/auth/current-actor";
-import { getCase } from "@/server/data/repository";
+import { getCase, startPersistedProtocolRun } from "@/server/data/repository";
 import { DatabaseNotConfiguredError } from "@/server/db";
 import { canReadCase, hasCapability } from "@/server/domain/access";
-import { createProtocolRun } from "@/server/domain/protocols";
 
 export const runtime = "nodejs";
 
@@ -32,7 +31,16 @@ export async function POST(_request: Request, { params }: { params: Promise<{ ca
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
 
-  const run = createProtocolRun(caseFile.id, caseFile.severity);
+  let run;
+  try {
+    run = await startPersistedProtocolRun({ caseId, actor });
+  } catch (error) {
+    if (error instanceof DatabaseNotConfiguredError) {
+      return Response.json({ error: "database_not_configured", message: error.message }, { status: 503 });
+    }
+    throw error;
+  }
+
   const audit = buildAuditEvent({
     actorId: actor.id,
     action: "protocol_run.start",
