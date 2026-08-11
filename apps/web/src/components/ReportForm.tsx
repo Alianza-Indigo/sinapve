@@ -2,11 +2,13 @@
 
 import { AlertTriangle, Pause, Send } from "lucide-react";
 import { useState } from "react";
+import { queueReportDraft } from "@/lib/offline/reports";
 
 type SubmitState =
   | { status: "idle" }
   | { status: "submitting" }
   | { status: "success"; folio: string }
+  | { status: "queued" }
   | { status: "error"; message: string };
 
 export function ReportForm() {
@@ -15,22 +17,46 @@ export function ReportForm() {
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitState({ status: "submitting" });
-    const formData = new FormData(event.currentTarget);
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const payload = Object.fromEntries(formData.entries()) as Record<string, string>;
 
-    const response = await fetch("/api/v1/reports", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(Object.fromEntries(formData.entries()))
-    });
-
-    if (!response.ok) {
-      setSubmitState({ status: "error", message: "No se pudo registrar. Intenta de nuevo o usa el canal de emergencia." });
+    // Sin conexión: guarda el borrador cifrado localmente y se enviará al
+    // reconectar (13.1). No se pierde la solicitud de ayuda.
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      try {
+        await queueReportDraft(payload);
+        setSubmitState({ status: "queued" });
+        form.reset();
+      } catch {
+        setSubmitState({ status: "error", message: "No hay conexion y no se pudo guardar localmente. Usa el canal de emergencia." });
+      }
       return;
     }
 
-    const data = (await response.json()) as { folio: string };
-    setSubmitState({ status: "success", folio: data.folio });
-    event.currentTarget.reset();
+    try {
+      const response = await fetch("/api/v1/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) {
+        setSubmitState({ status: "error", message: "No se pudo registrar. Intenta de nuevo o usa el canal de emergencia." });
+        return;
+      }
+      const data = (await response.json()) as { folio: string };
+      setSubmitState({ status: "success", folio: data.folio });
+      form.reset();
+    } catch {
+      // Falla de red durante el envío: se guarda offline para reintento.
+      try {
+        await queueReportDraft(payload);
+        setSubmitState({ status: "queued" });
+        form.reset();
+      } catch {
+        setSubmitState({ status: "error", message: "No se pudo registrar ni guardar localmente. Usa el canal de emergencia." });
+      }
+    }
   }
 
   return (
@@ -100,6 +126,11 @@ export function ReportForm() {
       {submitState.status === "success" ? (
         <p className="status-pill safe" role="status">
           Folio seguro: {submitState.folio}
+        </p>
+      ) : null}
+      {submitState.status === "queued" ? (
+        <p className="status-pill safe" role="status">
+          Sin conexion: tu solicitud quedo guardada de forma cifrada y se enviara automaticamente al recuperar la red.
         </p>
       ) : null}
       {submitState.status === "error" ? (
