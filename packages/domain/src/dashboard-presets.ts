@@ -206,7 +206,32 @@ export type KpiTone = "default" | "critical" | "warn" | "safe";
 export type KpiDelta = { pct: number; direction: "up" | "down" };
 export type ResolvedKpi = { key: DashboardKpiKey; label: string; display: string; hint?: string; tone: KpiTone; delta?: KpiDelta };
 
-export type DashboardContext = { actor: Actor; cases: CaseFile[]; reports: HelpReport[]; widgets: MetricWidget[] };
+// Agregados provenientes de tablas especializadas (EMIR, intervenciones,
+// auditoría, comunidad, organizaciones). Se calculan en el repositorio con SQL
+// y se inyectan aquí; si faltan, los KPIs correspondientes muestran "—".
+export type DashboardAggregates = {
+  interventionsActive?: number;
+  emirAvailable?: number;
+  emirDispatched?: number;
+  emirOnSite?: number;
+  emirActive?: number;
+  emirAvailabilityPct?: number | null;
+  communityActive?: number;
+  findingsOpen?: number;
+  auditsActive?: number;
+  auditCompliancePct?: number | null;
+  schoolsTotal?: number;
+  municipalitiesTotal?: number;
+  statesTotal?: number;
+};
+
+export type DashboardContext = {
+  actor: Actor;
+  cases: CaseFile[];
+  reports: HelpReport[];
+  widgets: MetricWidget[];
+  aggregates?: DashboardAggregates;
+};
 
 const KPI_LABELS: Record<DashboardKpiKey, string> = {
   casos_activos: "Casos activos",
@@ -322,35 +347,66 @@ export function resolveKpi(key: DashboardKpiKey, ctx: DashboardContext): Resolve
       return { key, label, display: String(reportsThisMonth(ctx.reports)), tone: "default", delta: reportsMonthDelta(ctx.reports) };
     case "escuelas_alcance":
     case "escuelas_evaluadas": {
-      const n = distinctCount([...ctx.cases, ...ctx.reports], (item) => item.organizationId);
-      return { key, label, display: String(n), tone: "default" };
+      const total = ctx.aggregates?.schoolsTotal;
+      const value = total ?? distinctCount([...ctx.cases, ...ctx.reports], (item) => item.organizationId);
+      return { key, label, display: String(value), tone: "default" };
     }
     case "municipios": {
-      const n = distinctCount(ctx.reports, (r) => r.municipality);
-      return { key, label, display: n > 0 ? String(n) : "—", tone: "default" };
+      const value = ctx.aggregates?.municipalitiesTotal ?? distinctCount(ctx.reports, (r) => r.municipality);
+      return { key, label, display: value > 0 ? String(value) : "—", tone: "default" };
     }
     case "estados": {
-      const n = distinctCount(ctx.reports, (r) => r.state);
-      return { key, label, display: n > 0 ? String(n) : "—", tone: "default" };
+      const value = ctx.aggregates?.statesTotal ?? distinctCount(ctx.reports, (r) => r.state);
+      return { key, label, display: value > 0 ? String(value) : "—", tone: "default" };
     }
-    // KPIs cuya fuente se conecta en una fase posterior (EMIR ops, cobertura,
-    // auditoría, redes, carga): honestos con "—" en vez de inventar cifras.
+    case "carga_trabajo": {
+      // Carga real = casos activos visibles del actor (sin capacidad configurada,
+      // no se expresa como % inventado).
+      const value = activeCases(ctx.cases).length;
+      return { key, label, display: String(value), hint: "casos activos", tone: "default" };
+    }
     case "intervenciones_activas":
-    case "carga_trabajo":
+      return numberOrDash(key, label, ctx.aggregates?.interventionsActive);
     case "emir_disponibles":
+      return numberOrDash(key, label, ctx.aggregates?.emirAvailable, "safe");
     case "despachos":
+      return numberOrDash(key, label, ctx.aggregates?.emirActive);
     case "en_traslado":
+      return numberOrDash(key, label, ctx.aggregates?.emirDispatched, "warn");
     case "en_atencion":
+      return numberOrDash(key, label, ctx.aggregates?.emirOnSite);
     case "disponibilidad":
+      return percentOrDash(key, label, ctx.aggregates?.emirAvailabilityPct);
     case "redes_activas":
-    case "cobertura":
+      return numberOrDash(key, label, ctx.aggregates?.communityActive);
     case "auditorias_activas":
+      return numberOrDash(key, label, ctx.aggregates?.auditsActive);
     case "cumplimiento":
-    case "hallazgos":
-      return na(key);
+      return percentOrDash(key, label, ctx.aggregates?.auditCompliancePct);
+    case "hallazgos": {
+      const value = ctx.aggregates?.findingsOpen;
+      if (value == null) return na(key);
+      return { key, label, display: String(value), tone: value > 0 ? "warn" : "safe" };
+    }
+    case "cobertura": {
+      const total = ctx.aggregates?.schoolsTotal;
+      if (!total) return na(key);
+      const active = distinctCount([...ctx.cases, ...ctx.reports], (item) => item.organizationId);
+      return { key, label, display: `${Math.min(100, Math.round((active / total) * 100))}%`, tone: "default" };
+    }
     default:
       return na(key);
   }
+}
+
+function numberOrDash(key: DashboardKpiKey, label: string, value: number | undefined, tone: KpiTone = "default"): ResolvedKpi {
+  if (value == null) return na(key);
+  return { key, label, display: String(value), tone: value > 0 || tone === "default" ? tone : "safe" };
+}
+
+function percentOrDash(key: DashboardKpiKey, label: string, value: number | null | undefined): ResolvedKpi {
+  if (value == null) return { key, label, display: "—", hint: "Sin fuente conectada", tone: "default" };
+  return { key, label, display: `${value}%`, tone: "default" };
 }
 
 // ---------------------------------------------------------------------------

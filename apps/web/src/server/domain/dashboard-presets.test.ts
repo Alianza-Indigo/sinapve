@@ -88,6 +88,32 @@ describe("kpi resolution", () => {
     expect(resolveKpi("emir_disponibles", ctx([], [])).display).toBe("—");
     expect(resolveKpi("cobertura", ctx([], [])).display).toBe("—");
   });
+
+  it("uses specialized aggregates when provided", () => {
+    const context: DashboardContext = {
+      actor,
+      cases: [caseFile({ id: "a", organizationId: "org_1" })],
+      reports: [],
+      widgets: [],
+      aggregates: {
+        emirAvailable: 8,
+        emirActive: 5,
+        emirAvailabilityPct: 60,
+        findingsOpen: 45,
+        auditCompliancePct: 78,
+        schoolsTotal: 4
+      }
+    };
+    expect(resolveKpi("emir_disponibles", context).display).toBe("8");
+    expect(resolveKpi("despachos", context).display).toBe("5");
+    expect(resolveKpi("disponibilidad", context).display).toBe("60%");
+    const findings = resolveKpi("hallazgos", context);
+    expect(findings.display).toBe("45");
+    expect(findings.tone).toBe("warn");
+    expect(resolveKpi("cumplimiento", context).display).toBe("78%");
+    // 1 escuela con actividad de 4 totales = 25%
+    expect(resolveKpi("cobertura", context).display).toBe("25%");
+  });
 });
 
 describe("operational panels", () => {

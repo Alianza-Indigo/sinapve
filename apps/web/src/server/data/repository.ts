@@ -1,5 +1,5 @@
 import { nanoid } from "nanoid";
-import { and, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { DatabaseNotConfiguredError, getDb, isDatabaseConfigured } from "../db";
 import { decryptSensitiveText, encryptSensitiveText, sha256Digest } from "../security/field-crypto";
 import {
@@ -2820,15 +2820,83 @@ export async function listPrivacyRequests() {
 
 // EP-13: metricas certificadas ya filtradas por el alcance efectivo del actor,
 // para render autenticado (tarjetas y graficas accesibles).
-// Sistema de Dashboards (Fase 1): compone el panel del actor a partir de su
-// preset (rol) con datos reales ya filtrados por permiso. No inventa cifras.
+// Fase 1.5: agregados de tablas especializadas (EMIR, intervenciones, auditoría,
+// comunidad, organizaciones) para poblar los KPIs que antes mostraban "—".
+// Se acotan por alcance donde la tabla lo permite; sin base, devuelve undefined.
+async function getDashboardAggregates(actor: Actor) {
+  if (!isDatabaseConfigured()) return undefined;
+  const db = getDb();
+  const orgId = actor.scope.organizationId;
+  const stateCode = actor.scope.stateCode;
+  const scoped = !actor.roles.includes("SUPER_ADMIN") && !actor.roles.includes("FEDERAL");
+
+  const one = async (query: PromiseLike<Array<{ n: unknown }>>) => {
+    const [row] = await query;
+    return Number(row?.n ?? 0);
+  };
+  const cnt = () => sql<number>`count(*)::int`;
+
+  // Intervenciones activas, acotadas a la organización del actor si aplica.
+  const caseScope = scoped && orgId ? inArray(interventionPlans.caseId, db.select({ id: cases.id }).from(cases).where(eq(cases.organizationId, orgId))) : undefined;
+  const interventionsActive = await one(db.select({ n: cnt() }).from(interventionPlans).where(and(eq(interventionPlans.status, "activo"), caseScope)));
+
+  // EMIR: ciclo disponible -> despachado -> en_sitio -> liberado.
+  const emirScope = scoped && orgId ? eq(emirDispatches.organizationId, orgId) : undefined;
+  const emirAvailable = await one(db.select({ n: cnt() }).from(emirDispatches).where(and(eq(emirDispatches.status, "disponible"), emirScope)));
+  const emirDispatched = await one(db.select({ n: cnt() }).from(emirDispatches).where(and(eq(emirDispatches.status, "despachado"), emirScope)));
+  const emirOnSite = await one(db.select({ n: cnt() }).from(emirDispatches).where(and(eq(emirDispatches.status, "en_sitio"), emirScope)));
+  const emirActive = emirDispatched + emirOnSite;
+  const emirLive = emirAvailable + emirActive;
+  const emirAvailabilityPct = emirLive > 0 ? Math.round((emirAvailable / emirLive) * 100) : null;
+
+  // Comunidad y auditoría (agregados no sensibles).
+  const communityActive = await one(db.select({ n: cnt() }).from(communityInitiatives).where(eq(communityInitiatives.status, "activa")));
+  const findingsOpen = await one(db.select({ n: cnt() }).from(auditFindings).where(eq(auditFindings.status, "abierto")));
+  const findingsTotal = await one(db.select({ n: cnt() }).from(auditFindings));
+  const auditCompliancePct = findingsTotal > 0 ? Math.round(((findingsTotal - findingsOpen) / findingsTotal) * 100) : null;
+  const auditsActive = await one(
+    db
+      .select({ n: sql<number>`count(distinct (${auditFindings.resourceType} || ':' || ${auditFindings.resourceId}))::int` })
+      .from(auditFindings)
+      .where(sql`${auditFindings.status} <> 'cerrado'`)
+  );
+
+  // Organizaciones por tipo (acotadas por estado del actor si aplica).
+  const orgState = scoped && stateCode ? eq(organizations.stateCode, stateCode) : undefined;
+  const schoolsTotal = await one(db.select({ n: cnt() }).from(organizations).where(and(eq(organizations.type, "school"), orgState)));
+  const municipalitiesTotal = await one(
+    db.select({ n: sql<number>`count(distinct ${organizations.municipalityCode})::int` }).from(organizations).where(orgState)
+  );
+  const statesTotal = await one(db.select({ n: cnt() }).from(organizations).where(eq(organizations.type, "state")));
+
+  return {
+    interventionsActive,
+    emirAvailable,
+    emirDispatched,
+    emirOnSite,
+    emirActive,
+    emirAvailabilityPct,
+    communityActive,
+    findingsOpen,
+    auditsActive,
+    auditCompliancePct,
+    schoolsTotal,
+    municipalitiesTotal,
+    statesTotal
+  };
+}
+
+// Sistema de Dashboards: compone el panel del actor a partir de su preset (rol)
+// con datos reales ya filtrados por permiso. No inventa cifras.
 export async function getDashboardModel(actor: Actor) {
   const preset = presetForRoles(actor.roles);
-  const [allReports, allCases] = isDatabaseConfigured() ? await Promise.all([listReports(), listCases()]) : [[], []];
+  const [allReports, allCases, aggregates] = isDatabaseConfigured()
+    ? await Promise.all([listReports(), listCases(), getDashboardAggregates(actor)])
+    : [[], [], undefined];
   const reports = allReports.filter((report) => canReadReport(actor, report));
   const cases = allCases.filter((caseFile) => canReadCase(actor, caseFile));
   const widgets = buildCertifiedWidgets(reports, cases);
-  const ctx = { actor, cases, reports, widgets };
+  const ctx = { actor, cases, reports, widgets, aggregates };
   const selected = preset.widgetIds
     .map((id) => widgets.find((widget) => widget.id === id))
     .filter((widget): widget is (typeof widgets)[number] => Boolean(widget));
