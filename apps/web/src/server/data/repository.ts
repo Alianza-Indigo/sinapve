@@ -3249,6 +3249,58 @@ export async function createAndDispatchNotification(input: {
   return { id: row.publicId, status: row.status, deliveries };
 }
 
+// Salud de la base para el endpoint HTTP de estado. No expone datos: solo
+// conectividad, si el esquema (migraciones) esta aplicado y conteos agregados.
+export async function getDatabaseHealth() {
+  if (!isDatabaseConfigured()) {
+    return { configured: false, reachable: false, migrationsApplied: false, appliedMigrations: 0, publicTables: 0 };
+  }
+  const db = getDb();
+  let reachable = false;
+  let migrationsApplied = false;
+  let appliedMigrations = 0;
+  let publicTables = 0;
+
+  try {
+    // Probar una tabla nucleo del esquema: si existe, el esquema esta aplicado.
+    await db.select({ id: organizations.id }).from(organizations).limit(1);
+    reachable = true;
+    migrationsApplied = true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    // La relacion no existe => conecta pero sin migraciones aplicadas.
+    if (/relation .* does not exist|no existe la relaci/i.test(message)) {
+      reachable = true;
+      migrationsApplied = false;
+    } else {
+      reachable = false;
+    }
+  }
+
+  if (reachable) {
+    try {
+      const res = (await db.execute(
+        sql`select count(*)::int as c from information_schema.tables where table_schema = 'public'`
+      )) as unknown as { rows?: Array<{ c: number }> } | Array<{ c: number }>;
+      const rows = Array.isArray(res) ? res : res.rows ?? [];
+      publicTables = Number(rows[0]?.c ?? 0);
+    } catch {
+      /* opcional */
+    }
+    try {
+      const res = (await db.execute(
+        sql`select count(*)::int as c from drizzle."__drizzle_migrations"`
+      )) as unknown as { rows?: Array<{ c: number }> } | Array<{ c: number }>;
+      const rows = Array.isArray(res) ? res : res.rows ?? [];
+      appliedMigrations = Number(rows[0]?.c ?? 0);
+    } catch {
+      /* la tabla de migraciones puede no existir aun */
+    }
+  }
+
+  return { configured: true, reachable, migrationsApplied, appliedMigrations, publicTables };
+}
+
 // EP-13: captura de insumos analiticos (INRE, encuestas, matricula, permanencia,
 // impacto, presupuesto) que alimentan las graficas certificadas. Datos reales,
 // nunca inventados: se registran por API/formulario y quedan auditados.
