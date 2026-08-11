@@ -66,19 +66,15 @@ Para entrar a la consola antes de enlazar el IdP, configure un admin bootstrap:
 |---|---|
 | `AUTH_SECRET` | requerido (ver sección B) |
 | `SINAPVE_ADMIN_EMAIL` | `admin@institucion.gob.mx` |
-| `SINAPVE_ADMIN_PASSWORD_HASH` | hash scrypt de la contraseña (nunca texto plano) |
+| `SINAPVE_ADMIN_PASSWORD` | la contraseña (texto), directamente en la variable |
 | `SINAPVE_ADMIN_ROLES` | roles separados por coma; incluya uno con `analytics:read` (p. ej. `FEDERAL`) |
 | `SINAPVE_ADMIN_NAME` | nombre visible (opcional) |
 | `SINAPVE_ADMIN_ORG` | `public_id` de organización para acotar alcance (opcional) |
 
-Genere el hash (localmente, no comitee la contraseña):
-
-```bash
-corepack pnpm --filter @sinapve/web admin:hash 'TU_CLAVE_FUERTE'
-# → scrypt:<salt>:<hash>  ← péguelo en SINAPVE_ADMIN_PASSWORD_HASH
-```
-
-Luego inicie sesión en `https://TU-DOMINIO/login`. Es una vía temporal; cuando
+La contraseña se compara en tiempo constante contra `SINAPVE_ADMIN_PASSWORD`.
+Guárdela solo en las variables de entorno de Vercel (cifradas en reposo), nunca
+en el repositorio. Inicie sesión en `https://TU-DOMINIO/login`. Es una vía
+temporal; cuando
 enlace OIDC, el login institucional aparece automáticamente y puede retirar el
 admin bootstrap.
 
