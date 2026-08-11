@@ -24,3 +24,9 @@ sources:
       - name: audit_findings
       - name: contextual_adaptations
       - name: communication_campaigns
+      - name: risk_scores
+      - name: survey_responses
+      - name: enrollment_figures
+      - name: school_retention
+      - name: impact_measurements
+      - name: budget_lines

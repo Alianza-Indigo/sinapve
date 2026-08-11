@@ -1,28 +1,52 @@
 version: 2
 
-# Contrato de la capa semantica: cada metrica certificada expone metric_code,
-# metric_version y value. La version debe coincidir con
-# packages/domain/src/certified-metrics.ts. Un cambio de formula exige nueva
-# version, pruebas y fecha efectiva (8.6).
+# Las 7 fórmulas certificadas del PRD 8.3. Cada modelo expone metric_code y
+# metric_version; la versión debe coincidir con
+# packages/domain/src/certified-metrics.ts. Un cambio de fórmula exige nueva
+# versión, pruebas y fecha efectiva (8.6).
 models:
-  - name: cumplimiento_sla
-    description: "Porcentaje de casos con primera respuesta dentro del SLA."
+  - name: tasa_incidencia
+    description: "Casos válidos por cada 1,000 estudiantes en el periodo."
     columns:
       - name: metric_code
         tests: [not_null]
       - name: metric_version
         tests: [not_null]
+  - name: tiempo_primera_respuesta
+    description: "Minutos entre reporte recibido y primera acción protectora (p50/p90)."
+    columns:
+      - name: metric_code
+        tests: [not_null]
+  - name: cumplimiento_sla
+    description: "Porcentaje de casos con primera respuesta dentro del SLA."
+    columns:
+      - name: metric_code
+        tests: [not_null]
       - name: value
         tests: [not_null]
-  - name: escalamiento_efectivo
-    description: "Referencias con acuse y accion sobre referencias enviadas elegibles."
+  - name: tasa_reincidencia_6m
+    description: "Casos con nueva incidencia dentro de 6 meses sobre cerrados elegibles."
     columns:
       - name: metric_code
         tests: [not_null]
       - name: value
         tests: [not_null]
   - name: cobertura_certificacion
-    description: "Personal obligado con certificacion vigente."
+    description: "Personal obligado con certificación vigente."
+    columns:
+      - name: metric_code
+        tests: [not_null]
+      - name: value
+        tests: [not_null]
+  - name: escalamiento_efectivo
+    description: "Referencias con acuse y acción sobre referencias enviadas elegibles."
+    columns:
+      - name: metric_code
+        tests: [not_null]
+      - name: value
+        tests: [not_null]
+  - name: completitud_dato
+    description: "Campos requeridos válidos sobre esperados."
     columns:
       - name: metric_code
         tests: [not_null]

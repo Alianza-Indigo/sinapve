@@ -57,6 +57,13 @@
       "when": 1786425880287,
       "tag": "0007_bent_dazzler",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786429237347,
+      "tag": "0008_cool_saracen",
+      "breakpoints": true
     }
   ]
 }

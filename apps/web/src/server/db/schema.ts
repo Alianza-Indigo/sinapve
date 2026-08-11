@@ -1,4 +1,4 @@
-import { boolean, customType, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { boolean, customType, index, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import type { CaseState, ReportMode, Severity } from "../domain/types";
 
 // EP / 9.2: tipo geoespacial PostGIS. Punto en SRID 4326 (WGS84). Se acepta EWKT
@@ -1138,6 +1138,118 @@ export const territorialPoints = pgTable(
   (table) => ({
     kindIdx: index("territorial_points_kind_idx").on(table.kind),
     organizationIdx: index("territorial_points_organization_idx").on(table.organizationId)
+  })
+);
+
+// EP-08 / 7.6: corridas del INRE (indice de riesgo) con puntaje, calidad y
+// contribucion por dimension. Alimenta G11 (tendencia) y G12 (factores).
+export const riskScores = pgTable(
+  "risk_scores",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    organizationId: uuid("organization_id").references(() => organizations.id),
+    modelVersion: integer("model_version").default(1).notNull(),
+    score: numeric("score").notNull(),
+    quality: integer("quality").default(0).notNull(),
+    factors: jsonb("factors").$type<Record<string, { value: number; contribution: number }>>().default({}).notNull(),
+    computedAt: timestamp("computed_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    orgIdx: index("risk_scores_org_idx").on(table.organizationId),
+    computedIdx: index("risk_scores_computed_idx").on(table.computedAt)
+  })
+);
+
+// EP-13: respuestas de encuesta agregables (IPSE percepcion, NPS confianza).
+// Alimenta G24 y G32. Sin vinculo a sanciones individuales.
+export const surveyResponses = pgTable(
+  "survey_responses",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    surveyType: text("survey_type").notNull(),
+    score: integer("score").notNull(),
+    period: text("period").notNull(),
+    organizationId: uuid("organization_id").references(() => organizations.id),
+    population: text("population"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    typeIdx: index("survey_responses_type_idx").on(table.surveyType),
+    periodIdx: index("survey_responses_period_idx").on(table.period)
+  })
+);
+
+// EP-13: matricula por plantel y periodo. Denominador de tasa_incidencia (G25).
+export const enrollmentFigures = pgTable(
+  "enrollment_figures",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    organizationId: uuid("organization_id").references(() => organizations.id),
+    period: text("period").notNull(),
+    students: integer("students").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    periodIdx: index("enrollment_figures_period_idx").on(table.period)
+  })
+);
+
+// EP-13: permanencia escolar por cohorte. Alimenta G27.
+export const schoolRetention = pgTable(
+  "school_retention",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    organizationId: uuid("organization_id").references(() => organizations.id),
+    cohortPeriod: text("cohort_period").notNull(),
+    continued: integer("continued").notNull(),
+    total: integer("total").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    cohortIdx: index("school_retention_cohort_idx").on(table.cohortPeriod)
+  })
+);
+
+// EP-13: mediciones de evaluacion de impacto (diseno DiD). Alimenta G28.
+export const impactMeasurements = pgTable(
+  "impact_measurements",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    indicator: text("indicator").notNull(),
+    groupType: text("group_type").notNull(),
+    phase: text("phase").notNull(),
+    period: text("period").notNull(),
+    value: numeric("value").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    indicatorIdx: index("impact_measurements_indicator_idx").on(table.indicator)
+  })
+);
+
+// EP-13: ejecucion presupuestal por componente y periodo. Alimenta G30.
+export const budgetLines = pgTable(
+  "budget_lines",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    period: text("period").notNull(),
+    component: text("component").notNull(),
+    level: text("level").notNull(),
+    devengado: numeric("devengado").default("0").notNull(),
+    ejercido: numeric("ejercido").default("0").notNull(),
+    meta: numeric("meta").default("0").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    periodIdx: index("budget_lines_period_idx").on(table.period),
+    componentIdx: index("budget_lines_component_idx").on(table.component)
   })
 );
 

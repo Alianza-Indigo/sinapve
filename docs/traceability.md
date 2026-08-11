@@ -46,3 +46,6 @@
 | IA supervisada por AI Gateway | EP-09 | Como APVE recibo clasificacion asistida validada contra JSON Schema con confirmacion humana | API `/ai/classifications` |
 | Asistente de protocolos con RAG | EP-09 | Como responsable consulto doctrina aprobada con fuente, version y confianza | `rag.test.ts`, API `/ai/protocol-assistant` |
 | Orquestacion durable portable | EP-04/EP-06 | Como sistema encolo recordatorios y vencimientos de acuse idempotentes y los proceso desde el Cron | Cron `/cron/sla-review`, `durable_jobs` |
+| Catalogo G01-G32 en capa semantica (dbt) | EP-13 | Como analista consumo las 32 graficas certificadas desde modelos versionados, sin formulas en el navegador | `analytics/dbt/models/graphs/*`, `dbt-graphs.test.ts` |
+| Formulas certificadas 8.3 completas | EP-13 | Como oficina de analitica versiono las 7 formulas con inclusiones/exclusiones y pruebas | `analytics/dbt/models/certified/*` |
+| Captura de insumos analiticos reales | EP-13 | Como autoridad registro INRE, encuestas, matricula, permanencia, impacto y presupuesto sin datos inventados | API `/analytics/inputs`, tablas `risk_scores`/`survey_responses`/`enrollment_figures`/`school_retention`/`impact_measurements`/`budget_lines` |

@@ -54,6 +54,12 @@ import {
   retentionPolicies,
   systemConfigurations,
   territorialPoints,
+  riskScores,
+  surveyResponses,
+  enrollmentFigures,
+  schoolRetention,
+  impactMeasurements,
+  budgetLines,
   trainingAssessments,
   trainingCohorts,
   trainingEnrollments,
@@ -3241,6 +3247,76 @@ export async function createAndDispatchNotification(input: {
     metadata: { actorId: input.actor.id, priority: input.priority, deliveries }
   });
   return { id: row.publicId, status: row.status, deliveries };
+}
+
+// EP-13: captura de insumos analiticos (INRE, encuestas, matricula, permanencia,
+// impacto, presupuesto) que alimentan las graficas certificadas. Datos reales,
+// nunca inventados: se registran por API/formulario y quedan auditados.
+export async function createAnalyticsInput(input:
+  | { kind: "risk_score"; organizationPublicId?: string; modelVersion?: number; score: number; quality?: number; factors?: Record<string, { value: number; contribution: number }>; actor: Actor }
+  | { kind: "survey"; surveyType: string; score: number; period: string; organizationPublicId?: string; population?: string; actor: Actor }
+  | { kind: "enrollment"; organizationPublicId?: string; period: string; students: number; actor: Actor }
+  | { kind: "retention"; organizationPublicId?: string; cohortPeriod: string; continued: number; total: number; actor: Actor }
+  | { kind: "impact"; indicator: string; groupType: string; phase: string; period: string; value: number; actor: Actor }
+  | { kind: "budget"; period: string; component: string; level: string; devengado: number; ejercido: number; meta: number; actor: Actor }
+) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const orgPublicId = "organizationPublicId" in input ? input.organizationPublicId : undefined;
+  const organization = orgPublicId ? await findOrganizationRow(orgPublicId) : null;
+  if (orgPublicId && !organization) throw new Error("ORGANIZATION_NOT_FOUND");
+
+  let publicId: string;
+  if (input.kind === "risk_score") {
+    publicId = `risk_${nanoid(10)}`;
+    await db.insert(riskScores).values({
+      publicId,
+      organizationId: organization?.id,
+      modelVersion: input.modelVersion ?? 1,
+      score: String(input.score),
+      quality: input.quality ?? 0,
+      factors: input.factors ?? {}
+    });
+  } else if (input.kind === "survey") {
+    publicId = `srv_${nanoid(10)}`;
+    await db.insert(surveyResponses).values({
+      publicId,
+      surveyType: input.surveyType,
+      score: input.score,
+      period: input.period,
+      organizationId: organization?.id,
+      population: input.population
+    });
+  } else if (input.kind === "enrollment") {
+    publicId = `enr_${nanoid(10)}`;
+    await db.insert(enrollmentFigures).values({ publicId, organizationId: organization?.id, period: input.period, students: input.students });
+  } else if (input.kind === "retention") {
+    publicId = `ret_${nanoid(10)}`;
+    await db.insert(schoolRetention).values({ publicId, organizationId: organization?.id, cohortPeriod: input.cohortPeriod, continued: input.continued, total: input.total });
+  } else if (input.kind === "impact") {
+    publicId = `imp_${nanoid(10)}`;
+    await db.insert(impactMeasurements).values({ publicId, indicator: input.indicator, groupType: input.groupType, phase: input.phase, period: input.period, value: String(input.value) });
+  } else {
+    publicId = `bud_${nanoid(10)}`;
+    await db.insert(budgetLines).values({
+      publicId,
+      period: input.period,
+      component: input.component,
+      level: input.level,
+      devengado: String(input.devengado),
+      ejercido: String(input.ejercido),
+      meta: String(input.meta)
+    });
+  }
+
+  await db.insert(auditEvents).values({
+    action: `analytics_input.${input.kind}.create`,
+    resourceType: "analytics_input",
+    resourceId: publicId,
+    reason: "certified_metric_source",
+    metadata: { actorId: input.actor.id, kind: input.kind }
+  });
+  return { id: publicId, kind: input.kind };
 }
 
 // EP-08 / 9.2: puntos territoriales como coordenadas para el mapa (MapLibre).
