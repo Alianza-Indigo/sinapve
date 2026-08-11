@@ -18,7 +18,10 @@ const allowedVisualizations = new Set([
   "funnel",
   "sankey",
   "heatmap",
-  "scatter"
+  "scatter",
+  "donut",
+  "radar",
+  "bar_horizontal"
 ]);
 
 const forbiddenKeyPattern = /(sql|query|raw|formula|script|--|;|\bunion\b|\bselect\b)/i;

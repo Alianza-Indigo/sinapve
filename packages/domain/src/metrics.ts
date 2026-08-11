@@ -41,12 +41,18 @@ function bySeverity(cases: CaseFile[]) {
   return Object.entries(counts).map(([label, value]) => ({ label, value }));
 }
 
-function zeroWidget(id: string, title: string, metricCodes: string[], updatedAt: string): MetricWidget {
+function zeroWidget(
+  id: string,
+  title: string,
+  metricCodes: string[],
+  updatedAt: string,
+  visualization: MetricWidget["visualization"] = "line"
+): MetricWidget {
   return {
     id,
     title,
     metricCodes,
-    visualization: "line",
+    visualization,
     valueLabel: "0",
     quality: 0,
     updatedAt,
@@ -95,7 +101,7 @@ export function buildCertifiedWidgets(reports: HelpReport[], cases: CaseFile[]):
       id: "G03_SEVERITY_DISTRIBUTION",
       title: "Distribucion por severidad",
       metricCodes: ["case_severity"],
-      visualization: "histogram",
+      visualization: "donut",
       valueLabel: `${criticalCases} criticos`,
       quality,
       updatedAt,
@@ -166,11 +172,11 @@ export function buildCertifiedWidgets(reports: HelpReport[], cases: CaseFile[]):
       series: reports.map((item) => ({ label: item.municipality || item.state || item.organizationId, value: severityWeight(item.suggestedSeverity) }))
     },
     zeroWidget("G11_INRE_TREND", "Tendencia INRE", ["inre_trend"], updatedAt),
-    zeroWidget("G12_INRE_FACTORS", "Factores del INRE", ["inre_factor_contribution"], updatedAt),
+    zeroWidget("G12_INRE_FACTORS", "Factores del INRE", ["inre_factor_contribution"], updatedAt, "bar_horizontal"),
     zeroWidget("G13_RISK_CAPACITY_MATRIX", "Matriz riesgo-capacidad", ["risk_capacity"], updatedAt),
     zeroWidget("G14_AI_ALERTS", "Alertas IA", ["ai_alerts"], updatedAt),
     zeroWidget("G15_APVE_WORKLOAD", "Carga de trabajo APVE", ["apve_weighted_cases"], updatedAt),
-    zeroWidget("G16_EMIR_CAPACITY", "Capacidad EMIR", ["emir_capacity"], updatedAt),
+    zeroWidget("G16_EMIR_CAPACITY", "Capacidad EMIR", ["emir_capacity"], updatedAt, "gauge"),
     zeroWidget("G17_ESCALATIONS", "Escalamientos", ["referral_flow"], updatedAt),
     zeroWidget("G18_EXTERNAL_RESPONSE_TIME", "Tiempo de respuesta externa", ["external_ack_minutes"], updatedAt),
     {
@@ -186,7 +192,7 @@ export function buildCertifiedWidgets(reports: HelpReport[], cases: CaseFile[]):
     },
     zeroWidget("G20_TRAINING_PROGRESS", "Progreso de formacion", ["training_progress"], updatedAt),
     zeroWidget("G21_RECERTIFICATIONS", "Proximas recertificaciones", ["recertification_due"], updatedAt),
-    zeroWidget("G22_AUDIT_COMPLIANCE", "Cumplimiento de auditoria", ["audit_closed_ratio"], updatedAt),
+    zeroWidget("G22_AUDIT_COMPLIANCE", "Cumplimiento de auditoria", ["audit_closed_ratio"], updatedAt, "radar"),
     zeroWidget("G23_DATA_QUALITY", "Calidad de datos", ["data_quality"], updatedAt),
     zeroWidget("G24_SAFETY_PERCEPTION", "Percepcion de seguridad", ["ipse"], updatedAt),
     zeroWidget("G25_ADJUSTED_INCIDENCE", "Incidencia ajustada", ["adjusted_incidence"], updatedAt),

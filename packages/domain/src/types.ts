@@ -118,7 +118,7 @@ export type MetricWidget = {
   id: string;
   title: string;
   metricCodes: string[];
-  visualization: "line" | "bullet" | "histogram" | "map" | "gauge";
+  visualization: "line" | "bullet" | "histogram" | "map" | "gauge" | "donut" | "radar" | "bar_horizontal";
   valueLabel: string;
   quality: number;
   updatedAt: string;
