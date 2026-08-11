@@ -18,7 +18,8 @@ async function signOutAction() {
   await signOut({ redirectTo: "/" });
 }
 
-export default async function BackofficePage() {
+export default async function BackofficePage({ searchParams }: { searchParams: Promise<{ scope?: string }> }) {
+  const { scope } = await searchParams;
   const actor = await resolveActor(await headers());
   const canUseBackoffice = actor ? BACKOFFICE_CAPS.some((cap) => hasCapability(actor, cap)) : false;
 
@@ -49,7 +50,7 @@ export default async function BackofficePage() {
   }
 
   const [model, counts] = await Promise.all([
-    getDashboardModel(actor),
+    getDashboardModel(actor, scope),
     getRealtimeCounts().catch(() => ({ pendingNotifications: 0, overdueReferrals: 0, pendingJobs: 0, criticalCases: 0 }))
   ]);
 

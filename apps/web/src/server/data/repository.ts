@@ -2887,28 +2887,62 @@ async function getDashboardAggregates(actor: Actor) {
 }
 
 // Sistema de Dashboards: compone el panel del actor a partir de su preset (rol)
-// con datos reales ya filtrados por permiso. No inventa cifras.
-export async function getDashboardModel(actor: Actor) {
+// con datos reales ya filtrados por permiso. Fase 3: acepta un alcance (scopeId)
+// para acotar (drill-down); las opciones se derivan de los datos ya visibles, de
+// modo que nunca se puede elegir un alcance fuera de la política ABAC.
+export async function getDashboardModel(actor: Actor, scopeId?: string) {
   const preset = presetForRoles(actor.roles);
   const [allReports, allCases, aggregates] = isDatabaseConfigured()
     ? await Promise.all([listReports(), listCases(), getDashboardAggregates(actor)])
     : [[], [], undefined];
-  const reports = allReports.filter((report) => canReadReport(actor, report));
-  const cases = allCases.filter((caseFile) => canReadCase(actor, caseFile));
+  const visibleReports = allReports.filter((report) => canReadReport(actor, report));
+  const visibleCases = allCases.filter((caseFile) => canReadCase(actor, caseFile));
+
+  // Opciones de alcance = organizaciones presentes en los datos visibles.
+  const labelByOrg = new Map<string, string>();
+  for (const report of visibleReports) {
+    if (report.organizationId) labelByOrg.set(report.organizationId, report.schoolName || report.organizationId);
+  }
+  for (const caseFile of visibleCases) {
+    if (caseFile.organizationId && !labelByOrg.has(caseFile.organizationId)) labelByOrg.set(caseFile.organizationId, caseFile.organizationId);
+  }
+  const scopeOptions = [...labelByOrg.entries()]
+    .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label))
+    .slice(0, 100);
+
+  const effectiveScope = scopeId && labelByOrg.has(scopeId) ? scopeId : "";
+  const reports = effectiveScope ? visibleReports.filter((report) => report.organizationId === effectiveScope) : visibleReports;
+  const cases = effectiveScope ? visibleCases.filter((caseFile) => caseFile.organizationId === effectiveScope) : visibleCases;
+
   const widgets = buildCertifiedWidgets(reports, cases);
   const ctx = { actor, cases, reports, widgets, aggregates };
   const selected = preset.widgetIds
     .map((id) => widgets.find((widget) => widget.id === id))
     .filter((widget): widget is (typeof widgets)[number] => Boolean(widget));
-  const scopeLabel = actor.scope.organizationId ?? actor.scope.stateCode ?? "Alcance completo";
+
+  // Serie territorial (señal por estado) para el mapa, desde reportes del alcance.
+  const territ = new Map<string, number>();
+  for (const report of reports) {
+    const state = report.state?.trim();
+    if (state) territ.set(state, (territ.get(state) ?? 0) + 1);
+  }
+  const territorial = [...territ.entries()].map(([label, value]) => ({ label, value }));
+
+  const scopeLabel = effectiveScope
+    ? labelByOrg.get(effectiveScope) ?? effectiveScope
+    : actor.scope.organizationId ?? actor.scope.stateCode ?? "Alcance completo";
+
   return {
     preset,
     kpis: resolveKpis(preset, ctx),
     panels: buildDashboardPanels(preset, ctx),
     widgets: selected,
+    territorial,
     updatedAt: toIso(new Date()),
     databaseConfigured: isDatabaseConfigured(),
-    scopeLabel
+    scopeLabel,
+    scope: { currentId: effectiveScope, options: scopeOptions }
   };
 }
 

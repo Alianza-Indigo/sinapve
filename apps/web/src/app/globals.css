@@ -966,3 +966,16 @@ body.high-contrast .news-card { border-color: #000; }
   .dash-profile-text { display: none; }
   .dash-quick-grid { grid-template-columns: 1fr; }
 }
+
+/* Mapa territorial por estado (fallback funcional del choropleth) */
+.territ-list { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.territ-row { display: grid; grid-template-columns: 96px 1fr 34px; align-items: center; gap: 10px; font-size: 0.86rem; }
+.territ-name { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.territ-bar { height: 10px; border-radius: 999px; background: #edeff6; overflow: hidden; }
+.territ-bar span { display: block; height: 100%; border-radius: 999px; }
+.territ-value { text-align: right; font-weight: 700; color: var(--muted); }
+.territ-legend { display: flex; gap: 14px; font-size: 0.76rem; color: var(--muted); }
+.territ-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.territ-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.dash-scope-field select:not([disabled]) { cursor: pointer; }
+.dash-scope-field select:not([disabled]):hover { border-color: var(--violet); }

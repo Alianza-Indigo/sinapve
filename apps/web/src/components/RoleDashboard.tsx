@@ -35,15 +35,19 @@ import type { MetricWidget, PlatformModuleId } from "@/server/domain/types";
 import type { DashboardKpiKey, DashboardPanel, DashboardPreset, ResolvedKpi } from "@/server/domain/dashboard-presets";
 import { KpiCard } from "./KpiCard";
 import { EChartWidget } from "./EChartWidget";
+import { ScopeSelect } from "./ScopeSelect";
+import { TerritorialMap } from "./TerritorialMap";
 
 type Model = {
   preset: DashboardPreset;
   kpis: ResolvedKpi[];
   panels: DashboardPanel[];
   widgets: MetricWidget[];
+  territorial: { label: string; value: number }[];
   updatedAt: string;
   databaseConfigured: boolean;
   scopeLabel: string;
+  scope: { currentId: string; options: { value: string; label: string }[] };
 };
 
 const KPI_ICON: Record<DashboardKpiKey, LucideIcon> = {
@@ -134,12 +138,7 @@ export function RoleDashboard({ model }: { model: Model }) {
     <>
       <div className="dash-scopebar">
         <span className="dash-role">{preset.label}</span>
-        <label className="dash-scope-field">
-          <span>Alcance:</span>
-          <select disabled defaultValue="scope">
-            <option value="scope">{model.scopeLabel}</option>
-          </select>
-        </label>
+        <ScopeSelect currentId={model.scope.currentId} options={model.scope.options} />
         <label className="dash-scope-field">
           <select disabled defaultValue="ciclo">
             <option value="ciclo">Ciclo escolar 2024–2025</option>
@@ -180,7 +179,18 @@ export function RoleDashboard({ model }: { model: Model }) {
 
       {widgets.length > 0 ? (
         <section className="widget-grid dash-analysis" aria-label="Análisis">
-          {widgets.map((widget) => (widget.series.length > 0 ? <EChartWidget key={widget.id} widget={widget} /> : <KpiCard key={widget.id} widget={widget} />))}
+          {widgets.map((widget) => {
+            if (widget.id === "G10_TERRITORIAL_RISK") {
+              return (
+                <figure className="panel" key={widget.id} style={{ margin: 0 }}>
+                  <p className="eyebrow">{widget.id.replaceAll("_", " ")}</p>
+                  <h3>Mapa territorial de riesgo</h3>
+                  <TerritorialMap series={model.territorial} />
+                </figure>
+              );
+            }
+            return widget.series.length > 0 ? <EChartWidget key={widget.id} widget={widget} /> : <KpiCard key={widget.id} widget={widget} />;
+          })}
         </section>
       ) : null}
 
