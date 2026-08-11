@@ -7,7 +7,7 @@ import { ModuleCreateForm } from "@/components/ModuleCreateForm";
 import { ModuleRecordsTable } from "@/components/ModuleRecordsTable";
 import { KpiCard } from "@/components/KpiCard";
 import { MetricWidgetChart } from "@/components/MetricWidgetChart";
-import { getActorFromHeaders } from "@/server/auth/current-actor";
+import { resolveActor } from "@/server/auth/session-actor";
 import { getCertifiedWidgetsForActor, listModuleRecords, listPlatformModules } from "@/server/data/repository";
 import { canReadModule } from "@/server/domain/access";
 import type { MetricWidget, PlatformModuleId } from "@/server/domain/types";
@@ -44,7 +44,7 @@ export default async function BackofficeModulePage({ params }: { params: Promise
   const { moduleId } = await params;
   if (!validModuleIds.includes(moduleId as PlatformModuleId)) notFound();
 
-  const actor = getActorFromHeaders(await headers());
+  const actor = await resolveActor(await headers());
   if (!actor || !canReadModule(actor, moduleId)) {
     return (
       <div className="page-shell">

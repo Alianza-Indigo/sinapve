@@ -4,7 +4,7 @@ import { Activity, BrainCircuit, FileText, Lock, Map, ShieldCheck } from "lucide
 import { Topbar } from "@/components/Topbar";
 import { KpiCard } from "@/components/KpiCard";
 import { ReportQueue } from "@/components/ReportQueue";
-import { getActorFromHeaders } from "@/server/auth/current-actor";
+import { resolveActor } from "@/server/auth/session-actor";
 import { getLiveDataStatus, listCases, listPlatformModules, listReports } from "@/server/data/repository";
 import { canReadCase, canReadModule, canReadReport, hasCapability } from "@/server/domain/access";
 import { buildCertifiedWidgets } from "@/server/domain/metrics";
@@ -12,7 +12,7 @@ import { buildCertifiedWidgets } from "@/server/domain/metrics";
 export const dynamic = "force-dynamic";
 
 export default async function BackofficePage() {
-  const actor = getActorFromHeaders(await headers());
+  const actor = await resolveActor(await headers());
   if (!actor || !hasCapability(actor, "analytics:read")) {
     return (
       <div className="page-shell">

@@ -43,6 +43,15 @@ configuracion:
    forma portable de la orquestacion durable; puede dispararse desde Cron y, en
    produccion, desde Vercel Queues/Workflows sin depender de estado en memoria.
 
+5. **Relying party OIDC/SAML (EP-01).** Cliente de identidad con Auth.js
+   (`server/auth/oidc.ts`) y mapeo de claims a `Actor`
+   (`server/auth/oidc-claims.ts`), detras de configuracion: si el proveedor no
+   esta enlazado (`SINAPVE_OIDC_*`, `AUTH_SECRET`), no se registra proveedor y la
+   app mantiene el modelo de gateway por encabezados firmados. El resolutor
+   unificado `resolveActor` prioriza la sesion OIDC y cae al gateway. El servicio
+   de identidad (IdP) y los secretos son externos; el codigo de integracion vive
+   en el repositorio.
+
 ## Consecuencias
 
 - Enlazar cada capacidad es una tarea de configuracion (variables/entorno), no de

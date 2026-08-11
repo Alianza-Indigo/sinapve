@@ -92,6 +92,7 @@ Sobre la base transaccional, la plataforma opera el ciclo de vida completo de ca
 Estos frentes dependen de un servicio o decision externa; el codigo esta
 implementado y se activa por configuracion (ver `docs/adr/0004-frentes-de-proveedor-externo.md`):
 
+- Identidad OIDC/SAML (EP-01): relying party con Auth.js. Con `AUTH_SECRET` y `SINAPVE_OIDC_ISSUER`/`CLIENT_ID`/`CLIENT_SECRET`, el inicio de sesion pasa por el proveedor institucional (`/api/auth/[...nextauth]`) y `resolveActor` deriva rol y alcance de los claims. Sin enlazar, se mantiene el modelo de gateway. El IdP y los secretos son externos; la integracion vive en el repo.
 - Identidad firmada por gateway (EP-01): con `SINAPVE_GATEWAY_SIGNING_KEY`, la app verifica la firma HMAC de los encabezados de identidad y rechaza identidad no firmada o alterada. Sin la clave, modo desarrollo.
 - IA supervisada (EP-09): con `SINAPVE_AI_GATEWAY_URL`/`SINAPVE_AI_GATEWAY_KEY`, la clasificacion asistida (`POST /api/v1/ai/classifications`) y el asistente de protocolos con RAG (`POST /api/v1/ai/protocol-assistant`) usan un AI Gateway agnostico de proveedor; sin enlazar, la IA queda apagada y el flujo humano continua. La IA nunca decide y cita fuente/version.
 - INRE configurable y versionado (EP-08): `GET/POST /api/v1/risk/inre` calcula el indice con pesos versionados, datos faltantes visibles y contribucion por dimension; requiere revision humana.

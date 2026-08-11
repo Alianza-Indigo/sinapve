@@ -5,7 +5,7 @@ import { ArrowLeft, Clock, Lock, ShieldCheck } from "lucide-react";
 import { Topbar } from "@/components/Topbar";
 import { CaseTimeline } from "@/components/CaseTimeline";
 import { ProtocolStepper } from "@/components/ProtocolStepper";
-import { getActorFromHeaders } from "@/server/auth/current-actor";
+import { resolveActor } from "@/server/auth/session-actor";
 import { getCase } from "@/server/data/repository";
 import { DatabaseNotConfiguredError } from "@/server/db";
 import { canReadCase, explainAccess } from "@/server/domain/access";
@@ -13,7 +13,7 @@ import { createProtocolRun } from "@/server/domain/protocols";
 
 export default async function CasePage({ params }: { params: Promise<{ caseId: string }> }) {
   const { caseId } = await params;
-  const actor = getActorFromHeaders(await headers());
+  const actor = await resolveActor(await headers());
   if (!actor) {
     return (
       <div className="page-shell">
