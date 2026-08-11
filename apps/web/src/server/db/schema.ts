@@ -804,6 +804,35 @@ export const dashboardLayouts = pgTable(
   })
 );
 
+// EP-18 / portal publico: publicaciones institucionales (comunicados, noticias,
+// recursos) que alimentan la seccion "Lo mas reciente" y la pagina de noticias.
+// Solo contenido publico aprobado; sin PII ni datos operativos.
+export const contentPosts = pgTable(
+  "content_posts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicId: text("public_id").notNull().unique(),
+    kind: text("kind").notNull(),
+    title: text("title").notNull(),
+    slug: text("slug").notNull().unique(),
+    summary: text("summary").notNull(),
+    body: text("body").default("").notNull(),
+    tag: text("tag"),
+    coverImagePath: text("cover_image_path"),
+    externalUrl: text("external_url"),
+    status: text("status").default("borrador").notNull(),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    authorUserId: uuid("author_user_id").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    statusIdx: index("content_posts_status_idx").on(table.status),
+    kindIdx: index("content_posts_kind_idx").on(table.kind),
+    publishedIdx: index("content_posts_published_idx").on(table.publishedAt)
+  })
+);
+
 export const metricExports = pgTable(
   "metric_exports",
   {

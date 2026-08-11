@@ -20,7 +20,8 @@ type Capability =
   | "reporting:read"
   | "configuration:read"
   | "privacy:read"
-  | "notification:read";
+  | "notification:read"
+  | "content:publish";
 
 const allCapabilities: Capability[] = [
   "report:create",
@@ -42,7 +43,8 @@ const allCapabilities: Capability[] = [
   "reporting:read",
   "configuration:read",
   "privacy:read",
-  "notification:read"
+  "notification:read",
+  "content:publish"
 ];
 
 // Superadministrador de plataforma: acceso total sin restriccion (omite la
@@ -59,9 +61,9 @@ const roleCapabilities: Record<Role, Capability[]> = {
   SCHOOL_STAFF: ["report:create"],
   APVE: ["report:read", "case:read", "case:update", "protocol:run", "analytics:read", "intervention:read", "referral:read", "institution:read", "training:read", "community:read", "notification:read"],
   SCHOOL_DIRECTOR: ["report:read", "case:read", "analytics:read", "intervention:read", "institution:read", "training:read", "community:read", "reporting:read"],
-  UEPE: ["report:read", "case:read", "case:update", "protocol:run", "protocol:author", "analytics:read", "intervention:read", "referral:read", "institution:read", "adaptation:read", "training:read", "community:read", "reporting:read", "notification:read"],
+  UEPE: ["report:read", "case:read", "case:update", "protocol:run", "protocol:author", "analytics:read", "intervention:read", "referral:read", "institution:read", "adaptation:read", "training:read", "community:read", "reporting:read", "notification:read", "content:publish"],
   EMIR: ["case:read", "case:update", "protocol:run", "intervention:read", "referral:read", "institution:read", "notification:read"],
-  FEDERAL: ["analytics:read", "audit:read", "reporting:read", "institution:read", "adaptation:read", "training:read", "community:read"],
+  FEDERAL: ["analytics:read", "audit:read", "reporting:read", "institution:read", "adaptation:read", "training:read", "community:read", "content:publish"],
   AUDITOR: ["case:read", "audit:read", "analytics:read", "reporting:read", "institution:read"],
   PRIVACY_OFFICER: ["audit:read", "case:read", "configuration:read", "privacy:read"],
   TECH_ADMIN: ["technical:operate", "configuration:read", "integration:read"]

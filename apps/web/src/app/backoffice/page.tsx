@@ -81,6 +81,12 @@ export default async function BackofficePage() {
                 Abrir expediente
               </Link>
             ) : null}
+            {hasCapability(actor, "content:publish") ? (
+              <Link className="button" href="/backoffice/contenido">
+                <FileText size={18} aria-hidden="true" />
+                Publicaciones
+              </Link>
+            ) : null}
             {isAuthEnabled() ? (
               <form action={signOutAction}>
                 <button className="button" type="submit">

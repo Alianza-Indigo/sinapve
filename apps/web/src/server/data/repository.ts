@@ -22,6 +22,7 @@ import {
   communicationCampaigns,
   consentRecords,
   contextualAdaptations,
+  contentPosts,
   dashboardLayouts,
   emirDispatches,
   generatedReports,
@@ -2834,6 +2835,192 @@ export async function getPublicIndicators() {
   }
   const [reports_, cases_] = await Promise.all([listReports(), listCases()]);
   return buildPublicIndicators(reports_, cases_);
+}
+
+// ---------------------------------------------------------------------------
+// Portal publico: modulo de publicaciones (comunicados / noticias / recursos).
+// ---------------------------------------------------------------------------
+
+export type PublicPost = {
+  id: string;
+  kind: string;
+  title: string;
+  slug: string;
+  summary: string;
+  tag: string | null;
+  coverImagePath: string | null;
+  externalUrl: string | null;
+  publishedAt: string | null;
+};
+
+const CONTENT_KINDS = new Set(["comunicado", "noticia", "recurso"]);
+
+function slugify(value: string) {
+  const base = value
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  return `${base || "publicacion"}-${nanoid(6).toLowerCase()}`;
+}
+
+function toPublicPost(row: {
+  publicId: string;
+  kind: string;
+  title: string;
+  slug: string;
+  summary: string;
+  tag: string | null;
+  coverImagePath: string | null;
+  externalUrl: string | null;
+  publishedAt: Date | null;
+}): PublicPost {
+  return {
+    id: row.publicId,
+    kind: row.kind,
+    title: row.title,
+    slug: row.slug,
+    summary: row.summary,
+    tag: row.tag,
+    coverImagePath: row.coverImagePath,
+    externalUrl: row.externalUrl,
+    publishedAt: row.publishedAt ? toIso(row.publishedAt) : null
+  };
+}
+
+// Publicaciones visibles en el portal, mas recientes primero.
+export async function listPublishedPosts(limit = 12): Promise<PublicPost[]> {
+  if (!isDatabaseConfigured()) return [];
+  const db = getDb();
+  const rows = await db
+    .select({
+      publicId: contentPosts.publicId,
+      kind: contentPosts.kind,
+      title: contentPosts.title,
+      slug: contentPosts.slug,
+      summary: contentPosts.summary,
+      tag: contentPosts.tag,
+      coverImagePath: contentPosts.coverImagePath,
+      externalUrl: contentPosts.externalUrl,
+      publishedAt: contentPosts.publishedAt
+    })
+    .from(contentPosts)
+    .where(eq(contentPosts.status, "publicado"))
+    .orderBy(desc(contentPosts.publishedAt))
+    .limit(limit);
+  return rows.map(toPublicPost);
+}
+
+// Detalle de una publicacion publicada por slug (incluye cuerpo).
+export async function getPublishedPostBySlug(slug: string) {
+  if (!isDatabaseConfigured()) return null;
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(contentPosts)
+    .where(and(eq(contentPosts.slug, slug), eq(contentPosts.status, "publicado")))
+    .limit(1);
+  if (!row) return null;
+  return { ...toPublicPost(row), body: row.body };
+}
+
+// Todas las publicaciones (borradores incluidos) para el backoffice.
+export async function listContentPostsForAdmin(limit = 100) {
+  if (!isDatabaseConfigured()) return [];
+  const db = getDb();
+  const rows = await db
+    .select({
+      publicId: contentPosts.publicId,
+      kind: contentPosts.kind,
+      title: contentPosts.title,
+      slug: contentPosts.slug,
+      status: contentPosts.status,
+      tag: contentPosts.tag,
+      publishedAt: contentPosts.publishedAt,
+      updatedAt: contentPosts.updatedAt
+    })
+    .from(contentPosts)
+    .orderBy(desc(contentPosts.updatedAt))
+    .limit(limit);
+  return rows.map((row) => ({
+    id: row.publicId,
+    kind: row.kind,
+    title: row.title,
+    slug: row.slug,
+    status: row.status,
+    tag: row.tag,
+    publishedAt: row.publishedAt ? toIso(row.publishedAt) : null,
+    updatedAt: toIso(row.updatedAt)
+  }));
+}
+
+export async function createContentPost(input: {
+  kind: string;
+  title: string;
+  summary: string;
+  body?: string;
+  tag?: string;
+  coverImagePath?: string;
+  externalUrl?: string;
+  publish?: boolean;
+  actor: Actor;
+}) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  if (!CONTENT_KINDS.has(input.kind)) throw new Error("INVALID_CONTENT_KIND");
+
+  const db = getDb();
+  const author = await findUserRow(input.actor.id);
+  const publish = input.publish ?? false;
+  const publicId = `post_${nanoid(10)}`;
+  const [row] = await db
+    .insert(contentPosts)
+    .values({
+      publicId,
+      kind: input.kind,
+      title: input.title,
+      slug: slugify(input.title),
+      summary: input.summary,
+      body: input.body ?? "",
+      tag: input.tag,
+      coverImagePath: input.coverImagePath,
+      externalUrl: input.externalUrl,
+      status: publish ? "publicado" : "borrador",
+      publishedAt: publish ? new Date() : null,
+      authorUserId: author?.id
+    })
+    .returning({ publicId: contentPosts.publicId, slug: contentPosts.slug, status: contentPosts.status });
+
+  await db.insert(auditEvents).values({
+    action: "content_post.create",
+    resourceType: "content_post",
+    resourceId: row.publicId,
+    reason: "content_publication",
+    metadata: { actorId: input.actor.id, kind: input.kind, status: row.status }
+  });
+
+  return { id: row.publicId, slug: row.slug, status: row.status };
+}
+
+export async function setContentPostStatus(input: { postId: string; status: "publicado" | "borrador"; actor: Actor }) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const [row] = await db
+    .update(contentPosts)
+    .set({ status: input.status, publishedAt: input.status === "publicado" ? new Date() : null, updatedAt: new Date() })
+    .where(eq(contentPosts.publicId, input.postId))
+    .returning({ publicId: contentPosts.publicId, status: contentPosts.status });
+  if (!row) throw new Error("CONTENT_POST_NOT_FOUND");
+
+  await db.insert(auditEvents).values({
+    action: "content_post.status",
+    resourceType: "content_post",
+    resourceId: row.publicId,
+    reason: "content_publication",
+    metadata: { actorId: input.actor.id, status: row.status }
+  });
+  return { id: row.publicId, status: row.status };
 }
 
 // EP-01: baja de cuenta. Desactiva al usuario y revoca TODAS sus sesiones para

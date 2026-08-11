@@ -71,6 +71,13 @@
       "when": 1786456896323,
       "tag": "0009_green_patriot",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786459360576,
+      "tag": "0010_lean_jocasta",
+      "breakpoints": true
     }
   ]
 }
