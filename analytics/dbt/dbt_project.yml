@@ -16,3 +16,7 @@ models:
     certified:
       +materialized: view
       +schema: analytics
+    graphs:
+      # Catálogo obligatorio G01–G32 (8.2). Vistas que espejan buildCertifiedWidgets.
+      +materialized: view
+      +schema: analytics

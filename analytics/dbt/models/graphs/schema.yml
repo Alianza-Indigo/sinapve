@@ -1,0 +1,198 @@
+version: 2
+
+# Catálogo obligatorio G01–G32 (PRD 8.2). Cada modelo expone graph_id y
+# metric_version; una prueba not_null garantiza el contrato mínimo. La versión
+# debe coincidir con packages/domain/src/metrics.ts (buildCertifiedWidgets).
+models:
+  - name: g01_casos_por_periodo
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g02_reportes_vs_confirmados
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g03_distribucion_severidad
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g04_tiempo_primera_respuesta
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g05_cumplimiento_sla
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g06_embudo_atencion
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g07_antiguedad_casos_abiertos
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g08_reincidencia
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g09_categorias_violencia
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g10_mapa_territorial_riesgo
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g11_tendencia_inre
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g12_factores_inre
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g13_matriz_riesgo_capacidad
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g14_alertas_ia
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g15_carga_apve
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g16_capacidad_emir
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g17_escalamientos
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g18_tiempo_respuesta_externa
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g19_cobertura_certificacion
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g20_progreso_formacion
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g21_recertificaciones
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g22_cumplimiento_auditoria
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g23_calidad_datos
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g24_percepcion_seguridad
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g25_incidencia_ajustada
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g26_inclusion_neurodivergente
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g27_permanencia_escolar
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g28_impacto_did
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g29_cobertura_territorial
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g30_ejecucion_presupuestal
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g31_campanas
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]
+  - name: g32_satisfaccion_confianza
+    columns:
+      - name: graph_id
+        tests: [not_null]
+      - name: metric_version
+        tests: [not_null]

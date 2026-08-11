@@ -8,9 +8,19 @@ sources:
     tables:
       - name: reports
       - name: cases
+      - name: case_events
+      - name: case_assignments
       - name: referrals
       - name: protocol_runs
       - name: protocol_step_events
       - name: training_enrollments
+      - name: training_programs
+      - name: training_cohorts
+      - name: training_assessments
       - name: organizations
-      - name: case_events
+      - name: emir_dispatches
+      - name: ai_decision_logs
+      - name: ai_feedback
+      - name: audit_findings
+      - name: contextual_adaptations
+      - name: communication_campaigns
