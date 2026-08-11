@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { getActorFromHeaders } from "@/server/auth/current-actor";
+import { resolveActor } from "@/server/auth/session-actor";
 import { advanceContextualAdaptation } from "@/server/data/repository";
 import { hasCapability } from "@/server/domain/access";
 import { mapDomainError } from "@/server/http/errors";
@@ -16,7 +16,7 @@ const schema = z
   .refine((value) => Object.keys(value).length > 0, { message: "sin_cambios" });
 
 export async function POST(request: Request, { params }: { params: Promise<{ adaptationId: string }> }) {
-  const actor = getActorFromHeaders(request.headers);
+  const actor = await resolveActor(request.headers);
   if (!actor) return Response.json({ error: "unauthorized" }, { status: 401 });
   if (!hasCapability(actor, "adaptation:read")) return Response.json({ error: "forbidden" }, { status: 403 });
 

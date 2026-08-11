@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { getActorFromHeaders } from "@/server/auth/current-actor";
+import { resolveActor } from "@/server/auth/session-actor";
 import { hasCapability } from "@/server/domain/access";
 import { computeInre, defaultInreModel, inreDimensions } from "@/server/domain/inre";
 
@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 // GET expone el modelo INRE activo (pesos versionados, propietario, dimensiones).
 export async function GET(request: Request) {
-  const actor = getActorFromHeaders(request.headers);
+  const actor = await resolveActor(request.headers);
   if (!actor) return Response.json({ error: "unauthorized" }, { status: 401 });
   if (!hasCapability(actor, "analytics:read")) return Response.json({ error: "forbidden" }, { status: 403 });
   return Response.json({ data: { model: defaultInreModel, dimensions: inreDimensions } });
@@ -28,7 +28,7 @@ const schema = z.object({
 // POST calcula el INRE de forma explicable a partir de valores por dimension.
 // La revision humana es obligatoria antes de asignar recursos o auditar (7.6).
 export async function POST(request: Request) {
-  const actor = getActorFromHeaders(request.headers);
+  const actor = await resolveActor(request.headers);
   if (!actor) return Response.json({ error: "unauthorized" }, { status: 401 });
   if (!hasCapability(actor, "analytics:read")) return Response.json({ error: "forbidden" }, { status: 403 });
 

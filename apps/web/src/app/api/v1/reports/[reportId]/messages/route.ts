@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { getActorFromHeaders } from "@/server/auth/current-actor";
+import { resolveActor } from "@/server/auth/session-actor";
 import { createReportMessage, listReports } from "@/server/data/repository";
 import { DatabaseNotConfiguredError } from "@/server/db";
 import { canReadReport, hasCapability } from "@/server/domain/access";
@@ -17,7 +17,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ rep
   const parsed = messageSchema.safeParse(body);
   if (!parsed.success) return Response.json({ error: "invalid_report_message", issues: parsed.error.flatten() }, { status: 400 });
 
-  const actor = getActorFromHeaders(request.headers);
+  const actor = await resolveActor(request.headers);
   const { reportId } = await params;
 
   if (parsed.data.senderType === "institution") {

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { buildAuditEvent } from "@/server/audit";
-import { getActorFromHeaders } from "@/server/auth/current-actor";
+import { resolveActor } from "@/server/auth/session-actor";
 import { createReport, listReports } from "@/server/data/repository";
 import { DatabaseNotConfiguredError } from "@/server/db";
 import { canReadReport } from "@/server/domain/access";
@@ -25,7 +25,7 @@ const createReportSchema = z.object({
 });
 
 export async function GET(request: Request) {
-  const actor = getActorFromHeaders(request.headers);
+  const actor = await resolveActor(request.headers);
   if (!actor) {
     return Response.json({ error: "unauthorized", message: "Falta identidad institucional en encabezados seguros." }, { status: 401 });
   }

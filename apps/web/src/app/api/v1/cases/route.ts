@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { getActorFromHeaders } from "@/server/auth/current-actor";
+import { resolveActor } from "@/server/auth/session-actor";
 import { createCaseFromReport } from "@/server/data/repository";
 import { DatabaseNotConfiguredError } from "@/server/db";
 import { hasCapability } from "@/server/domain/access";
@@ -14,7 +14,7 @@ const createCaseSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const actor = getActorFromHeaders(request.headers);
+  const actor = await resolveActor(request.headers);
   if (!actor) return Response.json({ error: "unauthorized" }, { status: 401 });
   if (!hasCapability(actor, "case:update")) return Response.json({ error: "forbidden" }, { status: 403 });
 

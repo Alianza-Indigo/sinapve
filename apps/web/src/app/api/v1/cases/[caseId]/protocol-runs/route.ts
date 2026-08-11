@@ -1,5 +1,5 @@
 import { buildAuditEvent } from "@/server/audit";
-import { getActorFromHeaders } from "@/server/auth/current-actor";
+import { resolveActor } from "@/server/auth/session-actor";
 import { getCase, startPersistedProtocolRun } from "@/server/data/repository";
 import { DatabaseNotConfiguredError } from "@/server/db";
 import { canReadCase, hasCapability } from "@/server/domain/access";
@@ -7,7 +7,7 @@ import { canReadCase, hasCapability } from "@/server/domain/access";
 export const runtime = "nodejs";
 
 export async function POST(_request: Request, { params }: { params: Promise<{ caseId: string }> }) {
-  const actor = getActorFromHeaders(_request.headers);
+  const actor = await resolveActor(_request.headers);
   if (!actor) {
     return Response.json({ error: "unauthorized", message: "Falta identidad institucional en encabezados seguros." }, { status: 401 });
   }

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { getActorFromHeaders } from "@/server/auth/current-actor";
+import { resolveActor } from "@/server/auth/session-actor";
 import { deactivateUser } from "@/server/data/repository";
 import { hasCapability } from "@/server/domain/access";
 import { mapDomainError } from "@/server/http/errors";
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 const schema = z.object({ reason: z.string().min(4).max(1000) });
 
 export async function POST(request: Request, { params }: { params: Promise<{ externalSubject: string }> }) {
-  const actor = getActorFromHeaders(request.headers);
+  const actor = await resolveActor(request.headers);
   if (!actor) return Response.json({ error: "unauthorized" }, { status: 401 });
   // Administracion de identidad institucional.
   if (!hasCapability(actor, "technical:operate") && !hasCapability(actor, "configuration:read")) {

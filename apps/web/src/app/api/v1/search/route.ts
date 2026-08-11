@@ -1,4 +1,4 @@
-import { getActorFromHeaders } from "@/server/auth/current-actor";
+import { resolveActor } from "@/server/auth/session-actor";
 import { listCases, listModuleRecords, listReports } from "@/server/data/repository";
 import { canReadCase, canReadModule, canReadReport } from "@/server/domain/access";
 import type { PlatformModuleId } from "@/server/domain/types";
@@ -29,7 +29,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  const actor = getActorFromHeaders(request.headers);
+  const actor = await resolveActor(request.headers);
   if (!actor) return Response.json({ error: "unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(request.url);

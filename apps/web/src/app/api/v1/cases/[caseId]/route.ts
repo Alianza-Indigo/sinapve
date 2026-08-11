@@ -1,5 +1,5 @@
 import { buildAuditEvent } from "@/server/audit";
-import { getActorFromHeaders } from "@/server/auth/current-actor";
+import { resolveActor } from "@/server/auth/session-actor";
 import { getCase, updateCaseState } from "@/server/data/repository";
 import { DatabaseNotConfiguredError } from "@/server/db";
 import { canReadCase, hasCapability } from "@/server/domain/access";
@@ -14,7 +14,7 @@ const updateCaseSchema = z.object({
 });
 
 export async function GET(_request: Request, { params }: { params: Promise<{ caseId: string }> }) {
-  const actor = getActorFromHeaders(_request.headers);
+  const actor = await resolveActor(_request.headers);
   if (!actor) {
     return Response.json({ error: "unauthorized", message: "Falta identidad institucional en encabezados seguros." }, { status: 401 });
   }
@@ -50,7 +50,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ cas
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ caseId: string }> }) {
-  const actor = getActorFromHeaders(request.headers);
+  const actor = await resolveActor(request.headers);
   if (!actor) return Response.json({ error: "unauthorized", message: "Falta identidad institucional en encabezados seguros." }, { status: 401 });
   if (!hasCapability(actor, "case:update")) return Response.json({ error: "forbidden" }, { status: 403 });
 
