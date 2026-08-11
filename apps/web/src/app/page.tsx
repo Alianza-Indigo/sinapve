@@ -6,6 +6,7 @@ import {
   Building2,
   ClipboardCheck,
   GraduationCap,
+  HeartHandshake,
   Landmark,
   LockKeyhole,
   MessageSquare,
@@ -157,7 +158,8 @@ export default async function HomePage() {
 
         <section className="landing">
           <div className="community-band">
-            <div>
+            <span className="cb-badge"><HeartHandshake size={32} aria-hidden="true" /></span>
+            <div className="cb-text">
               <h2>Juntos construimos entornos escolares seguros.</h2>
               <p>La prevención es responsabilidad de todas y todos.</p>
             </div>
