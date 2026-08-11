@@ -1,0 +1,28 @@
+{
+  "name": "sinapve",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@9.12.3",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "corepack pnpm --filter @sinapve/web dev",
+    "build": "corepack pnpm --filter @sinapve/web build",
+    "typecheck": "corepack pnpm --filter @sinapve/web typecheck",
+    "test": "corepack pnpm --filter @sinapve/web test",
+    "db:generate": "corepack pnpm --filter @sinapve/web db:generate",
+    "db:seed": "corepack pnpm --filter @sinapve/web db:seed",
+    "turbo:build": "turbo run build",
+    "turbo:test": "turbo run test"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.4",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

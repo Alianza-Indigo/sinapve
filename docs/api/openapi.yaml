@@ -1,0 +1,60 @@
+openapi: 3.1.0
+info:
+  title: SINAPVE API
+  version: 0.1.0
+servers:
+  - url: /api/v1
+paths:
+  /reports:
+    post:
+      summary: Create a public report or help request.
+      operationId: createReport
+      responses:
+        "201":
+          description: Report created with opaque folio.
+    get:
+      summary: List reports visible to the current server-side scope.
+      operationId: listReports
+      responses:
+        "200":
+          description: Report queue.
+  /reports/{reportId}/status:
+    get:
+      summary: Read safe public tracking status.
+      operationId: getReportStatus
+      parameters:
+        - name: reportId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Safe status without sensitive details.
+  /cases/{caseId}:
+    get:
+      summary: Read an authorized case file.
+      operationId: getCase
+      parameters:
+        - name: caseId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Case file with timeline and protocol state.
+  /cases/{caseId}/protocol-runs:
+    post:
+      summary: Start a protocol run for a case.
+      operationId: startProtocolRun
+      responses:
+        "202":
+          description: Protocol run accepted.
+  /dashboards/{dashboardId}:
+    get:
+      summary: Read an authorized analytics dashboard.
+      operationId: getDashboard
+      responses:
+        "200":
+          description: Certified widgets and data series.
