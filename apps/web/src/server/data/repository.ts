@@ -4012,38 +4012,96 @@ export async function createAndDispatchNotification(input: {
   const now = new Date();
   const nowMinutes = input.nowMinutes ?? now.getHours() * 60 + now.getMinutes();
 
-  const deliveries = [];
-  for (const channel of input.channels) {
-    const decision = shouldDeliver({ priority: input.priority, quietHours: input.quietHours, nowMinutes });
-    if (!decision.deliver) {
-      deliveries.push({ channel, status: "deferred", reason: decision.reason });
-      continue;
-    }
-    const delivery = await dispatchToChannel(channel, { safeSummary: input.safeSummary, priority: input.priority });
-    deliveries.push({ ...delivery, reason: decision.reason });
-  }
+  if (input.caseId && !caseRow) throw new Error("CASE_NOT_FOUND");
 
-  const [row] = await db
-    .insert(notifications)
-    .values({
+  const deliveries: Array<{ channel: NotificationChannel; status: string; reason: string; id: string }> = [];
+  for (const channel of [...new Set(input.channels)]) {
+    const [row] = await db.insert(notifications).values({
       publicId: `ntf_${nanoid(10)}`,
       caseId: caseRow?.id,
       userId: user?.id,
       priority: input.priority,
-      channel: input.channels.join(","),
+      channel,
       safeSummary: input.safeSummary,
-      status: deliveries.some((d) => d.status === "delivered" || d.status === "queued_provider") ? "enviada" : "pendiente"
-    })
-    .returning({ publicId: notifications.publicId, status: notifications.status });
+      status: "pendiente"
+    }).returning({ publicId: notifications.publicId });
+
+    const decision = shouldDeliver({ priority: input.priority, quietHours: input.quietHours, nowMinutes });
+    const delivery = decision.deliver
+      ? await dispatchToChannel(channel, { safeSummary: input.safeSummary, priority: input.priority })
+      : { channel, status: "provider_not_configured" as const };
+
+    const sent = delivery.status === "delivered" || delivery.status === "queued_provider";
+    if (sent) {
+      await db.update(notifications).set({ status: "enviada" })
+        .where(eq(notifications.publicId, row.publicId));
+    }
+    deliveries.push({
+      id: row.publicId, channel,
+      status: sent ? "enviada" : "pendiente",
+      reason: decision.deliver ? delivery.status : decision.reason
+    });
+  }
 
   await db.insert(auditEvents).values({
     action: "notification.dispatch",
     resourceType: "notification",
-    resourceId: row.publicId,
+    resourceId: deliveries[0]?.id ?? "none",
     reason: "multichannel_dispatch",
-    metadata: { actorId: input.actor.id, priority: input.priority, deliveries }
+    metadata: {
+      actorId: input.actor.id, priority: input.priority,
+      deliveries: deliveries.map(({ channel, status, reason }) => ({ channel, status, reason }))
+    }
   });
-  return { id: row.publicId, status: row.status, deliveries };
+  return {
+    ids: deliveries.map((item) => item.id),
+    status: deliveries.every((item) => item.status === "enviada") ? "enviada" : "pendiente",
+    deliveries
+  };
+}
+
+// Retry stored channel-level deliveries, without needing sensitive data in
+// the webhook body or replaying a whole multichannel notification.
+export async function retryPendingNotifications(limit = 50) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const db = getDb();
+  const rows = await db.select({
+    id: notifications.id,
+    channel: notifications.channel,
+    safeSummary: notifications.safeSummary,
+    priority: notifications.priority
+  }).from(notifications)
+    .where(eq(notifications.status, "pendiente"))
+    .orderBy(notifications.createdAt)
+    .limit(Math.max(1, Math.min(limit, 100)));
+
+  let sent = 0;
+  let pending = 0;
+  for (const row of rows) {
+    if (!["in_app", "email", "sms", "push", "voice"].includes(row.channel)) {
+      pending++; // Legacy multi-channel rows remain flagged for manual migration.
+      continue;
+    }
+    const channel = row.channel as NotificationChannel;
+    if (!isChannelConfigured(channel)) { pending++; continue; }
+    // Atomically claim the pending record before invoking the provider to
+    // reduce duplicate deliveries across concurrent cron executions.
+    const [claimed] = await db.update(notifications)
+      .set({ status: "en_proceso" })
+      .where(and(eq(notifications.id, row.id), eq(notifications.status, "pendiente")))
+      .returning({ id: notifications.id });
+    if (!claimed) continue;
+    const result = await dispatchToChannel(channel, {
+      safeSummary: row.safeSummary,
+      priority: row.priority as NotificationPriority
+    });
+    const delivered = result.status === "delivered" || result.status === "queued_provider";
+    await db.update(notifications)
+      .set({ status: delivered ? "enviada" : "pendiente" })
+      .where(eq(notifications.id, row.id));
+    if (delivered) sent++; else pending++;
+  }
+  return { reviewed: rows.length, sent, pending };
 }
 
 // EP / 11.6: conteos operativos en vivo para el canal de tiempo real (SSE).

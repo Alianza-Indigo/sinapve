@@ -9,6 +9,14 @@ import sharp from "sharp";
 export type ExifPolicy = "stripped_on_ingest" | "not_applicable";
 export type ScanStatus = "passed_external" | "passed_heuristic" | "infected";
 
+export class MalwareScannerUnavailableError extends Error {
+  constructor() {
+    super("No hay un motor antivirus verificado disponible para este archivo.");
+    this.name = "MalwareScannerUnavailableError";
+  }
+}
+
+
 export class MalwareDetectedError extends Error {
   constructor() {
     super("El archivo no paso el escaneo antivirus.");
@@ -48,24 +56,35 @@ export async function scanForMalware(buffer: Buffer): Promise<ScanStatus> {
   }
 
   if (isExternalScannerConfigured()) {
-    const response = await fetch(process.env.SINAPVE_AV_SCAN_URL!, {
-      method: "POST",
-      headers: {
-        "content-type": "application/octet-stream",
-        ...(process.env.SINAPVE_AV_SCAN_KEY ? { authorization: `Bearer ${process.env.SINAPVE_AV_SCAN_KEY}` } : {})
-      },
-      body: new Uint8Array(buffer)
-    });
-    if (!response.ok) {
-      // Un escaner caido no debe permitir contenido sin revisar.
+    let response: Response;
+    try {
+      response = await fetch(process.env.SINAPVE_AV_SCAN_URL!, {
+        method: "POST",
+        headers: {
+          "content-type": "application/octet-stream",
+          ...(process.env.SINAPVE_AV_SCAN_KEY ? { authorization: `Bearer ${process.env.SINAPVE_AV_SCAN_KEY}` } : {})
+        },
+        body: new Uint8Array(buffer),
+        signal: AbortSignal.timeout(15_000)
+      });
+    } catch {
+      throw new MalwareScannerUnavailableError();
+    }
+    if (!response.ok) throw new MalwareScannerUnavailableError();
+    const verdict = (await response.json().catch(() => null)) as { infected?: boolean; status?: string } | null;
+    // Reject ambiguous/unknown responses. Never treat {} or an unrecognized
+    // status as a clean verdict.
+    if (verdict?.infected === true || verdict?.status === "infected") {
       throw new MalwareDetectedError();
     }
-    const verdict = (await response.json().catch(() => ({}))) as { infected?: boolean; status?: string };
-    if (verdict.infected || verdict.status === "infected") {
-      throw new MalwareDetectedError();
+    if (verdict?.status === "clean" || verdict?.status === "passed" || verdict?.status === "safe") {
+      return "passed_external";
     }
-    return "passed_external";
+    throw new MalwareScannerUnavailableError();
   }
 
+  // Local heuristic is useful for development, but never constitutes a
+  // production antivirus verdict for evidence involving minors.
+  if (process.env.NODE_ENV === "production") throw new MalwareScannerUnavailableError();
   return "passed_heuristic";
 }

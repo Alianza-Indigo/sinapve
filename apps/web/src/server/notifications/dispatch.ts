@@ -42,7 +42,8 @@ export async function dispatchToChannel(
       method: "POST",
       headers: { "content-type": "application/json" },
       // Nunca se envia detalle sensible: solo el resumen seguro y la prioridad.
-      body: JSON.stringify({ summary: message.safeSummary, priority: message.priority })
+      body: JSON.stringify({ summary: message.safeSummary, priority: message.priority }),
+      signal: AbortSignal.timeout(10_000)
     });
     return { channel, status: response.ok ? "queued_provider" : "provider_error" };
   } catch {

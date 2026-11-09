@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { resolveActor } from "@/server/auth/session-actor";
-import { createCaseFromReport, getReportAccessRecord } from "@/server/data/repository";
+import { createCaseFromReport, getReportAccessRecord, listCases } from "@/server/data/repository";
 import { DatabaseNotConfiguredError } from "@/server/db";
 import { canCreateCaseFromReport, hasCapability } from "@/server/domain/access";
 
@@ -12,6 +12,21 @@ const createCaseSchema = z.object({
   slaMinutes: z.number().int().min(5).max(10_080),
   protectionSummary: z.string().max(4000).optional()
 });
+
+export async function GET(request: Request) {
+  const actor = await resolveActor(request.headers);
+  if (!actor) return Response.json({ error: "unauthorized" }, { status: 401 });
+  if (!hasCapability(actor, "case:read")) return Response.json({ error: "forbidden" }, { status: 403 });
+  const search = new URL(request.url).searchParams;
+  const limit = Number(search.get("limit") ?? 100);
+  const offset = Number(search.get("offset") ?? 0);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 200 ||
+      !Number.isInteger(offset) || offset < 0 || offset > 1_000_000) {
+    return Response.json({ error: "invalid_pagination" }, { status: 400 });
+  }
+  const data = await listCases({ actor, limit, offset });
+  return Response.json({ data, pagination: { limit, offset, hasMore: data.length === limit } });
+}
 
 export async function POST(request: Request) {
   const actor = await resolveActor(request.headers);

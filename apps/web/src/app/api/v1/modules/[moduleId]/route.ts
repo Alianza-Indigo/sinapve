@@ -69,15 +69,22 @@ export async function GET(request: Request, { params }: { params: Promise<{ modu
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
 
+  const search = new URL(request.url).searchParams;
+  const limit = Number(search.get("limit") ?? 100);
+  const offset = Number(search.get("offset") ?? 0);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 200 ||
+      !Number.isInteger(offset) || offset < 0 || offset > 1_000_000) {
+    return Response.json({ error: "invalid_pagination" }, { status: 400 });
+  }
   if (moduleId === "reports") {
-    const reports = (await listReports({ actor })).filter((item) => canReadReport(actor, item));
+    const reports = (await listReports({ actor, limit, offset })).filter((item) => canReadReport(actor, item));
     return Response.json({ data: reports.map((item) => ({
       id: item.id, title: item.folio, status: item.status, owner: item.schoolName,
       updatedAt: item.createdAt, detail: item.description
     })) });
   }
   if (moduleId === "cases") {
-    const cases = (await listCases({ actor })).filter((item) => canReadCase(actor, item));
+    const cases = (await listCases({ actor, limit, offset })).filter((item) => canReadCase(actor, item));
     return Response.json({ data: cases.map((item) => ({
       id: item.id, title: item.folio, status: item.state, owner: item.assignedTo,
       updatedAt: item.timeline[0]?.at ?? "", detail: item.title

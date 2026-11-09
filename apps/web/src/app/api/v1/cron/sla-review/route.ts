@@ -1,4 +1,4 @@
-import { processDueJobs, sweepOverdueReferrals } from "@/server/data/repository";
+import { processDueJobs, retryPendingNotifications, sweepOverdueReferrals } from "@/server/data/repository";
 import { countJobsByStatus } from "@/server/data/jobs";
 import { DatabaseNotConfiguredError } from "@/server/db";
 import type { Actor } from "@/server/domain/types";
@@ -30,12 +30,14 @@ export async function GET(request: Request) {
     // 2) Barrido de respaldo: escala referencias vencidas que no tuvieran
     //    trabajo durable asociado (6.7).
     const referrals = await sweepOverdueReferrals({ actor: cronActor });
+    const notifications = await retryPendingNotifications(50);
     const queue = await countJobsByStatus();
     return Response.json({
       status: "accepted",
       job: "sla-review",
       jobs,
       referrals,
+      notifications,
       queue,
       note: "Cola durable drenada y referencias sin acuse revisadas."
     });
