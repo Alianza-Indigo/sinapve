@@ -22,6 +22,20 @@ describe("scanForMalware", () => {
     }
   });
 
+  it("rechaza un veredicto ambiguo del proveedor", async () => {
+    const url = process.env.SINAPVE_AV_SCAN_URL;
+    const previousFetch = globalThis.fetch;
+    try {
+      process.env.SINAPVE_AV_SCAN_URL = "https://scanner.example.test/scan";
+      globalThis.fetch = async () => new Response(JSON.stringify({}), { status: 200 });
+      await expect(scanForMalware(Buffer.from("contenido limpio"))).rejects.toBeInstanceOf(MalwareScannerUnavailableError);
+    } finally {
+      globalThis.fetch = previousFetch;
+      if (url === undefined) delete process.env.SINAPVE_AV_SCAN_URL;
+      else process.env.SINAPVE_AV_SCAN_URL = url;
+    }
+  });
+
   it("bloquea la firma EICAR", async () => {
     await expect(scanForMalware(Buffer.from(EICAR))).rejects.toBeInstanceOf(MalwareDetectedError);
   });

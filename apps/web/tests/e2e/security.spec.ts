@@ -26,3 +26,15 @@ test("las entradas invalidas se rechazan antes de tocar la base", async ({ reque
   expect(res.status()).toBe(400);
   expect((await res.json()).error).toBe("invalid_report");
 });
+
+test("el listado de expedientes y el envio de mensajes institucionales requieren identidad", async ({ request }) => {
+  for (const url of ["/api/v1/cases?limit=20&offset=0", "/api/v1/reports?limit=20&offset=0"]) {
+    const response = await request.get(url);
+    expect(response.status()).toBe(401);
+  }
+  const res = await request.post("/api/v1/reports/REP-EJEMPLO/messages", {
+    data: { senderType: "reporter", body: "Solicito seguimiento" }
+  });
+  expect(res.status()).toBe(403);
+  expect((await res.json()).error).toBe("follow_up_token_required");
+});

@@ -26,7 +26,14 @@ export async function getSessionActor(): Promise<Actor | null> {
 // deactivation or reassignment. Resolve effective access from live records.
 async function currentInstitutionalAccess(actor: Actor): Promise<boolean> {
   // The bootstrap administrator is supplied by explicit server-only settings.
-  if (actor.id.startsWith("admin:")) return true;
+  const configuredEmail = process.env.SINAPVE_ADMIN_EMAIL?.trim().toLowerCase();
+  const expectedAdminId = configuredEmail ? `admin:${configuredEmail}` : null;
+  if (expectedAdminId && actor.id === expectedAdminId && process.env.SINAPVE_ADMIN_PASSWORD && process.env.AUTH_SECRET) {
+    // Only the exact configured bootstrap account can bypass the institutional registry.
+    const allowedRoles = (process.env.SINAPVE_ADMIN_ROLES ?? "TECH_ADMIN").split(",").map((r) => r.trim());
+    return actor.roles.length > 0 && actor.roles.every((role) => allowedRoles.includes(role));
+  }
+  if (actor.id.startsWith("admin:")) return false;
   if (!isDatabaseConfigured()) return false;
 
   try {
