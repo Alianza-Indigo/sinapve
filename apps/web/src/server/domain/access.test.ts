@@ -75,3 +75,12 @@ describe("institutional write boundaries", () => {
     expect(canWriteModule({ ...actor, roles: ["AUDITOR"] }, "analytics")).toBe(false);
   });
 });
+
+describe('privileged role provisioning', () => {
+  it('prevents technical administrators from creating superadministrators', async () => {
+    const { canProvisionRole } = await import('./access');
+    expect(canProvisionRole({ ...actor, roles: ['TECH_ADMIN'] }, 'SUPER_ADMIN')).toBe(false);
+    expect(canProvisionRole({ ...actor, roles: ['TECH_ADMIN'] }, 'APVE')).toBe(true);
+    expect(canProvisionRole({ ...actor, roles: ['SUPER_ADMIN'] }, 'INVALID_ROLE')).toBe(false);
+  });
+});
