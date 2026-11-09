@@ -87,8 +87,8 @@ import { evaluateMediation } from "../domain/mediation";
 import { isReferralOverdue } from "../domain/sla";
 import { validateDashboardWidgets } from "../domain/dashboards";
 import { buildCertifiedWidgets } from "../domain/metrics";
-import { buildPublicIndicators } from "../domain/public-indicators";
-import { canReadCase, canReadReport } from "../domain/access";
+import { buildPublicIndicators, buildPublicIndicatorsFromTotals } from "../domain/public-indicators";
+import { canReadCase, canReadReport, hasCapability, isSuperAdmin } from "../domain/access";
 import { presetForRoles, resolveKpis, buildDashboardPanels } from "../domain/dashboard-presets";
 import { claimDueJobs, completeJob, failJob } from "./jobs";
 import { enqueueDurable } from "../jobs/adapter";
@@ -208,10 +208,32 @@ async function findUserRow(externalSubject: string) {
   return user ?? null;
 }
 
-export async function listReports() {
+export type CollectionPage = { actor?: Actor; limit?: number; offset?: number };
+
+function pageSize(value?: number) {
+  return Math.max(1, Math.min(200, Number.isFinite(value) ? Math.trunc(value!) : 100));
+}
+function pageOffset(value?: number) {
+  return Math.max(0, Math.min(1_000_000, Number.isFinite(value) ? Math.trunc(value!) : 0));
+}
+
+export async function listReports(options: CollectionPage = {}) {
   if (!isDatabaseConfigured()) return [];
 
   const db = getDb();
+  const actor = options.actor;
+  const scoped = actor && !isSuperAdmin(actor);
+  // All filtering is performed before pagination; never decrypt other schools'
+  // reports and then filter them in application memory.
+  const accessFilter = scoped
+    ? !hasCapability(actor, "report:read") || actor.roles.includes("FEDERAL")
+      ? sql`false`
+      : actor.roles.includes("UEPE") && actor.scope.stateCode
+        ? eq(organizations.stateCode, actor.scope.stateCode)
+        : actor.scope.organizationId
+          ? eq(organizations.publicId, actor.scope.organizationId)
+          : sql`false`
+    : undefined;
   const rows = await db
     .select({
       id: reports.publicId,
@@ -231,8 +253,10 @@ export async function listReports() {
     })
     .from(reports)
     .leftJoin(organizations, eq(reports.organizationId, organizations.id))
-    .orderBy(desc(reports.createdAt))
-    .limit(100);
+    .where(accessFilter)
+    .orderBy(desc(reports.createdAt), desc(reports.id))
+    .limit(pageSize(options.limit))
+    .offset(pageOffset(options.offset));
 
   return rows.map((row): HelpReport => {
     const metadata = row.metadata ?? {};
@@ -255,10 +279,24 @@ export async function listReports() {
   });
 }
 
-export async function listCases() {
+export async function listCases(options: CollectionPage = {}) {
   if (!isDatabaseConfigured()) return [];
 
   const db = getDb();
+  const actor = options.actor;
+  const scoped = actor && !isSuperAdmin(actor);
+  const accessFilter = scoped
+    ? !hasCapability(actor, "case:read") || actor.roles.includes("FEDERAL") || actor.roles.includes("TECH_ADMIN")
+      ? sql`false`
+      : actor.roles.includes("AUDITOR") || actor.roles.includes("PRIVACY_OFFICER")
+        ? undefined
+        : or(
+            actor.scope.organizationId ? eq(organizations.publicId, actor.scope.organizationId) : sql`false`,
+            actor.scope.assignedCaseIds?.length
+              ? inArray(cases.publicId, actor.scope.assignedCaseIds)
+              : sql`false`
+          )
+    : undefined;
   const rows = await db
     .select({
       id: cases.publicId,
@@ -276,8 +314,10 @@ export async function listCases() {
     .from(cases)
     .leftJoin(reports, eq(cases.reportId, reports.id))
     .leftJoin(organizations, eq(cases.organizationId, organizations.id))
-    .orderBy(desc(cases.createdAt))
-    .limit(100);
+    .where(accessFilter)
+    .orderBy(desc(cases.createdAt), desc(cases.id))
+    .limit(pageSize(options.limit))
+    .offset(pageOffset(options.offset));
 
   return rows.map((row): CaseFile => ({
     id: row.id,
@@ -3133,8 +3173,22 @@ export async function getPublicIndicators() {
   if (!isDatabaseConfigured()) {
     return buildPublicIndicators([], []);
   }
-  const [reports_, cases_] = await Promise.all([listReports(), listCases()]);
-  return buildPublicIndicators(reports_, cases_);
+  // Count all rows in SQL rather than the first page of sensitive records.
+  const db = getDb();
+  const [[reportTotal], [caseTotal], severityRows] = await Promise.all([
+    db.select({ count: sql<number>`count(*)::int` }).from(reports),
+    db.select({
+      count: sql<number>`count(*)::int`,
+      compliant: sql<number>`count(*) filter (where coalesce(${cases.firstResponseMinutes}, 0) <= ${cases.slaMinutes})::int`
+    }).from(cases),
+    db.select({ severity: cases.severity, count: sql<number>`count(*)::int` }).from(cases).groupBy(cases.severity)
+  ]);
+  return buildPublicIndicatorsFromTotals({
+    reports: Number(reportTotal?.count ?? 0),
+    cases: Number(caseTotal?.count ?? 0),
+    slaCompliant: Number(caseTotal?.compliant ?? 0),
+    severity: Object.fromEntries(severityRows.map((row) => [row.severity, Number(row.count)]))
+  });
 }
 
 // ---------------------------------------------------------------------------

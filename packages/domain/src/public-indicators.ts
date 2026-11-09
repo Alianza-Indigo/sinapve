@@ -81,3 +81,48 @@ export function buildPublicIndicators(reports: HelpReport[], cases: CaseFile[], 
 
   return { generatedAt, minimumCellCount: PUBLIC_MINIMUM_CELL_COUNT, kpis, charts };
 }
+
+export type PublicIndicatorTotals = {
+  reports: number;
+  cases: number;
+  slaCompliant: number;
+  severity: Partial<Record<"leve" | "moderada" | "grave" | "critica", number>>;
+};
+
+// Aggregated, complete data: never fetch all private case details just to
+// compute a public metric. SQL computes the totals with no row-count cap.
+export function buildPublicIndicatorsFromTotals(t: PublicIndicatorTotals, now = new Date()): PublicIndicators {
+  const generatedAt = now.toISOString();
+  const reportsScalar = suppressScalar(t.reports);
+  const casesScalar = suppressScalar(t.cases);
+  const sla = t.cases === 0 ? 0 : Math.round((t.slaCompliant / t.cases) * 100);
+  const conversion = t.reports === 0 ? 0 : Math.round((t.cases / t.reports) * 100);
+  const kpis: PublicKpi[] = [
+    { code: "reports_received", label: "Solicitudes de ayuda recibidas", ...reportsScalar },
+    { code: "cases_opened", label: "Expedientes abiertos", ...casesScalar },
+    { code: "sla_compliance", label: "Cumplimiento de SLA",
+      value: t.cases >= PUBLIC_MINIMUM_CELL_COUNT ? `${sla}%` : "reservado por privacidad",
+      suppressed: t.cases > 0 && t.cases < PUBLIC_MINIMUM_CELL_COUNT },
+    { code: "report_to_case_conversion", label: "Conversion de reporte a expediente",
+      value: t.reports >= PUBLIC_MINIMUM_CELL_COUNT ? `${conversion}%` : "reservado por privacidad",
+      suppressed: t.reports > 0 && t.reports < PUBLIC_MINIMUM_CELL_COUNT }
+  ];
+  const severitySuppression = suppressSmallCells(
+    (["leve", "moderada", "grave", "critica"] as const).map((label) => ({
+      label, value: t.severity[label] ?? 0, count: t.severity[label] ?? 0
+    })),
+    PUBLIC_MINIMUM_CELL_COUNT
+  );
+  const charts: MetricWidget[] = [{
+    id: "G03_SEVERITY_DISTRIBUTION",
+    title: "Distribucion por severidad (agregada)",
+    metricCodes: ["case_severity"],
+    visualization: "histogram",
+    valueLabel: casesScalar.suppressed ? "reservado por privacidad" : `${t.cases} casos`,
+    quality: t.cases === 0 ? 0 : 95,
+    updatedAt: generatedAt,
+    privacySuppressedCells: severitySuppression.suppressedCount,
+    series: severitySuppression.cells.map((cell) => ({ label: cell.label, value: cell.value }))
+  }];
+  return { generatedAt, minimumCellCount: PUBLIC_MINIMUM_CELL_COUNT, kpis, charts };
+}

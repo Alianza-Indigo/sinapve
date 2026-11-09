@@ -3,7 +3,7 @@ import { buildAuditEvent } from "@/server/audit";
 import { resolveActor } from "@/server/auth/session-actor";
 import { createReport, listReports } from "@/server/data/repository";
 import { DatabaseNotConfiguredError } from "@/server/db";
-import { canReadReport } from "@/server/domain/access";
+
 import { FieldEncryptionNotConfiguredError } from "@/server/security/field-crypto";
 import { isCaptchaEnabled, verifyCaptcha } from "@/server/security/captcha";
 
@@ -31,9 +31,15 @@ export async function GET(request: Request) {
     return Response.json({ error: "unauthorized", message: "Falta identidad institucional en encabezados seguros." }, { status: 401 });
   }
 
-  const reports = await listReports();
-  const data = reports.filter((report) => canReadReport(actor, report));
-  return Response.json({ data });
+  const url = new URL(request.url);
+  const limit = Number(url.searchParams.get("limit") ?? 100);
+  const offset = Number(url.searchParams.get("offset") ?? 0);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 200 ||
+      !Number.isInteger(offset) || offset < 0 || offset > 1_000_000) {
+    return Response.json({ error: "invalid_pagination" }, { status: 400 });
+  }
+  const reports = await listReports({ actor, limit, offset });
+  return Response.json({ data: reports, pagination: { limit, offset, hasMore: reports.length === limit } });
 }
 
 export async function POST(request: Request) {

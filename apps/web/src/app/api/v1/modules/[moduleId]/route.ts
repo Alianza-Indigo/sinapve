@@ -70,14 +70,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ modu
   }
 
   if (moduleId === "reports") {
-    const reports = (await listReports()).filter((item) => canReadReport(actor, item));
+    const reports = (await listReports({ actor })).filter((item) => canReadReport(actor, item));
     return Response.json({ data: reports.map((item) => ({
       id: item.id, title: item.folio, status: item.status, owner: item.schoolName,
       updatedAt: item.createdAt, detail: item.description
     })) });
   }
   if (moduleId === "cases") {
-    const cases = (await listCases()).filter((item) => canReadCase(actor, item));
+    const cases = (await listCases({ actor })).filter((item) => canReadCase(actor, item));
     return Response.json({ data: cases.map((item) => ({
       id: item.id, title: item.folio, status: item.state, owner: item.assignedTo,
       updatedAt: item.timeline[0]?.at ?? "", detail: item.title
