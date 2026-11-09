@@ -91,6 +91,7 @@ export type CaseFile = {
   severity: Severity;
   assignedTo: string;
   firstResponseMinutes: number;
+  hasFirstResponse?: boolean;
   slaMinutes: number;
   protectionSummary: string;
   timeline: CaseTimelineEvent[];

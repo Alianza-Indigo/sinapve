@@ -6,7 +6,9 @@ export function firstResponseMinutes(caseFile: Pick<CaseFile, "firstResponseMinu
 
 export function slaCompliance(cases: Array<Pick<CaseFile, "firstResponseMinutes" | "slaMinutes">>) {
   if (cases.length === 0) return 0;
-  const compliant = cases.filter((item) => item.firstResponseMinutes <= item.slaMinutes).length;
+  const compliant = cases.filter(
+    (item) => item.hasFirstResponse !== false && item.firstResponseMinutes <= item.slaMinutes
+  ).length;
   return Math.round((compliant / cases.length) * 100);
 }
 
@@ -63,8 +65,9 @@ function zeroWidget(
 
 export function buildCertifiedWidgets(reports: HelpReport[], cases: CaseFile[]): MetricWidget[] {
   const updatedAt = new Date().toISOString();
-  const averageFirstResponse =
-    cases.length === 0 ? 0 : Math.round(cases.reduce((sum, item) => sum + item.firstResponseMinutes, 0) / cases.length);
+  const answeredCases = cases.filter((item) => item.hasFirstResponse !== false);
+  const averageFirstResponse = answeredCases.length === 0
+    ? 0 : Math.round(answeredCases.reduce((sum, item) => sum + item.firstResponseMinutes, 0) / answeredCases.length);
   const sla = slaCompliance(cases);
   const territorialRisk = Math.max(0, Math.min(100, Math.round(reportConversionRate(reports, cases))));
   const quality = reports.length + cases.length === 0 ? 0 : 95;
@@ -117,7 +120,7 @@ export function buildCertifiedWidgets(reports: HelpReport[], cases: CaseFile[]):
       quality,
       updatedAt,
       privacySuppressedCells: 0,
-      series: cases.map((item) => ({ label: item.folio, value: item.firstResponseMinutes, target: item.slaMinutes }))
+      series: answeredCases.map((item) => ({ label: item.folio, value: item.firstResponseMinutes, target: item.slaMinutes }))
     },
     {
       id: "G05_SLA_COMPLIANCE",

@@ -146,7 +146,9 @@ async function findCaseRow(caseId: string, actor?: Actor) {
     .select({
       id: cases.id, publicId: cases.publicId, folio: cases.folio,
       organizationId: cases.organizationId, organizationPublicId: organizations.publicId,
-      severity: cases.severity
+      severity: cases.severity,
+      createdAt: cases.createdAt,
+      firstResponseMinutes: cases.firstResponseMinutes
     })
     .from(cases)
     .leftJoin(organizations, eq(cases.organizationId, organizations.id))
@@ -330,6 +332,7 @@ export async function listCases(options: CollectionPage = {}) {
     severity: row.severity,
     assignedTo: "Pendiente de asignacion",
     firstResponseMinutes: row.firstResponseMinutes ?? 0,
+    hasFirstResponse: row.firstResponseMinutes !== null,
     slaMinutes: row.slaMinutes,
     protectionSummary: decryptSensitiveText(row.protectionSummary) || "Sin resumen de proteccion registrado.",
     timeline: [
@@ -439,6 +442,7 @@ export async function getCase(caseId: string) {
     severity: caseRow.severity,
     assignedTo: "Pendiente de asignacion",
     firstResponseMinutes: caseRow.firstResponseMinutes ?? 0,
+    hasFirstResponse: caseRow.firstResponseMinutes !== null,
     slaMinutes: caseRow.slaMinutes,
     protectionSummary: decryptSensitiveText(caseRow.protectionSummary) || "Sin resumen de proteccion registrado.",
     timeline
@@ -1166,7 +1170,7 @@ export async function createCaseFromReport(input: {
       state: "en_triaje",
       severity: report.suggestedSeverity,
       protectionSummaryCiphertext: encryptSensitiveText(input.protectionSummary ?? "Pendiente de resumen de proteccion."),
-      firstResponseMinutes: 0,
+      firstResponseMinutes: null,
       slaMinutes: input.slaMinutes
     })
     .returning({ id: cases.id, publicId: cases.publicId, folio: cases.folio });
@@ -1202,12 +1206,23 @@ export async function updateCaseState(input: {
   const caseRow = await findCaseRow(input.caseId, input.actor);
   if (!caseRow) throw new Error("CASE_NOT_FOUND");
 
-  const updateValues: { state: CaseState; protectionSummaryCiphertext?: string; closedAt: Date | null } = {
+  const updateValues: {
+    state: CaseState;
+    protectionSummaryCiphertext?: string;
+    closedAt: Date | null;
+    firstResponseMinutes?: number;
+  } = {
     state: input.state,
     closedAt: input.state === "cerrado" ? new Date() : null
   };
   if (input.protectionSummary) {
     updateValues.protectionSummaryCiphertext = encryptSensitiveText(input.protectionSummary);
+  }
+  if (caseRow.firstResponseMinutes === null &&
+      input.state !== "nuevo" && input.state !== "en_triaje") {
+    updateValues.firstResponseMinutes = Math.max(0,
+      Math.round((Date.now() - caseRow.createdAt.getTime()) / 60_000)
+    );
   }
 
   await db
@@ -3288,7 +3303,7 @@ export async function getPublicIndicators() {
     db.select({ count: sql<number>`count(*)::int` }).from(reports),
     db.select({
       count: sql<number>`count(*)::int`,
-      compliant: sql<number>`count(*) filter (where coalesce(${cases.firstResponseMinutes}, 0) <= ${cases.slaMinutes})::int`
+      compliant: sql<number>`count(*) filter (where ${cases.firstResponseMinutes} is not null and ${cases.firstResponseMinutes} <= ${cases.slaMinutes})::int`
     }).from(cases),
     db.select({ severity: cases.severity, count: sql<number>`count(*)::int` }).from(cases).groupBy(cases.severity)
   ]);
