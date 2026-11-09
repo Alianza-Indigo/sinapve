@@ -2,7 +2,7 @@ import { z } from "zod";
 import { resolveActor } from "@/server/auth/session-actor";
 import { createUserWithAssignment } from "@/server/data/repository";
 import { DatabaseNotConfiguredError } from "@/server/db";
-import { canReadModule } from "@/server/domain/access";
+import { canManageInstitutionalUsers, canProvisionRole } from "@/server/domain/access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,11 +18,12 @@ const userSchema = z.object({
 export async function POST(request: Request) {
   const actor = await resolveActor(request.headers);
   if (!actor) return Response.json({ error: "unauthorized" }, { status: 401 });
-  if (!canReadModule(actor, "configuration")) return Response.json({ error: "forbidden" }, { status: 403 });
+  if (!canManageInstitutionalUsers(actor)) return Response.json({ error: "forbidden" }, { status: 403 });
 
   const body = await request.json().catch(() => null);
   const parsed = userSchema.safeParse(body);
   if (!parsed.success) return Response.json({ error: "invalid_user", issues: parsed.error.flatten() }, { status: 400 });
+  if (!canProvisionRole(actor, parsed.data.role)) return Response.json({ error: "forbidden_role" }, { status: 403 });
 
   try {
     const data = await createUserWithAssignment({ ...parsed.data, actor });
