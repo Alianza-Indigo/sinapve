@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { resolveActor } from "@/server/auth/session-actor";
 import { deactivateUser } from "@/server/data/repository";
-import { hasCapability } from "@/server/domain/access";
+import { canManageInstitutionalUsers } from "@/server/domain/access";
 import { mapDomainError } from "@/server/http/errors";
 
 export const runtime = "nodejs";
@@ -13,7 +13,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ ext
   const actor = await resolveActor(request.headers);
   if (!actor) return Response.json({ error: "unauthorized" }, { status: 401 });
   // Administracion de identidad institucional.
-  if (!hasCapability(actor, "technical:operate") && !hasCapability(actor, "configuration:read")) {
+  if (!canManageInstitutionalUsers(actor)) {
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
 
