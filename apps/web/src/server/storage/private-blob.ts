@@ -1,9 +1,9 @@
 import { get, put, type PutBlobResult } from "@vercel/blob";
 import { nanoid } from "nanoid";
 import { sha256Digest } from "../security/field-crypto";
-import { scanForMalware, stripExif, MalwareDetectedError, MalwareScannerUnavailableError, type ScanStatus, type ExifPolicy } from "./attachment-safety";
+import { scanForMalware, stripExif, MalwareDetectedError, type ScanStatus, type ExifPolicy } from "./attachment-safety";
 
-export { MalwareDetectedError, MalwareScannerUnavailableError };
+export { MalwareDetectedError };
 
 const maxEvidenceBytes = 25 * 1024 * 1024;
 const allowedEvidenceTypes = new Set([

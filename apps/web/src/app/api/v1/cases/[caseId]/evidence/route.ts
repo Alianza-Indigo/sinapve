@@ -3,7 +3,7 @@ import { resolveActor } from "@/server/auth/session-actor";
 import { getCase, recordCaseEvidence } from "@/server/data/repository";
 import { DatabaseNotConfiguredError } from "@/server/db";
 import { canReadCase, canUpdateCase } from "@/server/domain/access";
-import { EvidenceBlobValidationError, MalwareDetectedError, MalwareScannerUnavailableError, PrivateBlobNotConfiguredError, readPrivateEvidenceBlob, uploadPrivateEvidenceBlob } from "@/server/storage/private-blob";
+import { EvidenceBlobValidationError, MalwareDetectedError, PrivateBlobNotConfiguredError, readPrivateEvidenceBlob, uploadPrivateEvidenceBlob } from "@/server/storage/private-blob";
 
 export const runtime = "nodejs";
 
@@ -72,10 +72,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
 
     if (error instanceof EvidenceBlobValidationError) {
       return Response.json({ error: "invalid_evidence_file", message: error.message }, { status: 400 });
-    }
-
-    if (error instanceof MalwareScannerUnavailableError) {
-      return Response.json({ error: "antivirus_unavailable", message: "El escaneo antivirus debe estar disponible antes de aceptar evidencias." }, { status: 503 });
     }
 
     if (error instanceof MalwareDetectedError) {
