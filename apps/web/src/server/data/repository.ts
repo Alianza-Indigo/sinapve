@@ -454,12 +454,14 @@ export async function createReport(input: {
         source: "public_help_request",
         piiHandling: input.mode,
         followUpTokenDigest,
-        clientRequestId: input.clientRequestId,
-        affectedPeople: input.affectedPeople ?? [],
-        contactPreference: input.contactPreference ?? {},
-        consents: input.consents ?? {},
-        categoriesConfirmed: input.categoriesConfirmed ?? [],
-        evidenceIntent: input.evidenceIntent ?? {}
+        privateIntakeCiphertext: encryptSensitiveText(JSON.stringify({
+          clientRequestId: input.clientRequestId ?? null,
+          affectedPeople: input.affectedPeople ?? [],
+          contactPreference: input.contactPreference ?? {},
+          consents: input.consents ?? {},
+          categoriesConfirmed: input.categoriesConfirmed ?? [],
+          evidenceIntent: input.evidenceIntent ?? {}
+        }))
       }
     })
     .returning({
@@ -485,7 +487,7 @@ export async function createReport(input: {
       checkType: "duplicate_suggestion",
       status: duplicateScore >= 40 ? "review" : "clear",
       score: duplicateScore,
-      evidence: { clientRequestId: input.clientRequestId ?? null, organizationPublicId: organization.publicId }
+      evidence: { clientRequestIdDigest: input.clientRequestId ? sha256Digest(input.clientRequestId) : null, organizationPublicId: organization.publicId }
     },
     {
       publicId: `chk_${nanoid(10)}`,
@@ -493,7 +495,7 @@ export async function createReport(input: {
       checkType: "consent_and_category",
       status: "captured",
       score: null,
-      evidence: { consents: input.consents ?? {}, categoriesConfirmed: input.categoriesConfirmed ?? [] }
+      evidence: { sensitiveDataEncrypted: true, consentCaptured: Boolean(input.consents), categoriesCaptured: Boolean(input.categoriesConfirmed?.length) }
     }
   ]);
 
