@@ -1,6 +1,6 @@
 import { nanoid } from "nanoid";
 import { createHash, timingSafeEqual } from "crypto";
-import { canCreateCaseFromReport, canUpdateCase } from "../domain/access";
+import { canCreateCaseFromReport, canUpdateCase, canProvisionRole } from "../domain/access";
 import { and, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { DatabaseNotConfiguredError, getDb, isDatabaseConfigured } from "../db";
 import { decryptSensitiveText, encryptSensitiveText, sha256Digest } from "../security/field-crypto";
@@ -2915,6 +2915,7 @@ export async function createUserWithAssignment(input: {
   const db = getDb();
   const organization = await findOrganizationRow(input.organizationPublicId);
   if (!organization) throw new Error("ORGANIZATION_NOT_FOUND");
+  if (!canProvisionRole(input.actor, input.role)) throw new Error("ROLE_FORBIDDEN");
 
   const [user] = await db
     .insert(users)
