@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { resolveActor } from "@/server/auth/session-actor";
-import { createInterventionPlan } from "@/server/data/repository";
+import { createInterventionPlan, getCase } from "@/server/data/repository";
 import { DatabaseNotConfiguredError } from "@/server/db";
-import { hasCapability } from "@/server/domain/access";
+import { canUpdateCase, hasCapability } from "@/server/domain/access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,6 +25,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
 
   const { caseId } = await params;
   try {
+    const caseFile = await getCase(caseId);
+    if (!caseFile) return Response.json({ error: "not_found" }, { status: 404 });
+    if (!canUpdateCase(actor, caseFile)) return Response.json({ error: "forbidden" }, { status: 403 });
     const data = await createInterventionPlan({ caseId, actor, ...parsed.data });
     return Response.json({ data }, { status: 201 });
   } catch (error) {

@@ -2,7 +2,7 @@ import { buildAuditEvent } from "@/server/audit";
 import { resolveActor } from "@/server/auth/session-actor";
 import { getCase, updateCaseState } from "@/server/data/repository";
 import { DatabaseNotConfiguredError } from "@/server/db";
-import { canReadCase, hasCapability } from "@/server/domain/access";
+import { canReadCase, canUpdateCase, hasCapability } from "@/server/domain/access";
 import { z } from "zod";
 
 export const runtime = "nodejs";
@@ -60,6 +60,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
 
   const { caseId } = await params;
   try {
+    const caseFile = await getCase(caseId);
+    if (!caseFile) return Response.json({ error: "not_found" }, { status: 404 });
+    if (!canUpdateCase(actor, caseFile)) return Response.json({ error: "forbidden" }, { status: 403 });
     const data = await updateCaseState({ caseId, actor, ...parsed.data });
     return Response.json({ data });
   } catch (error) {

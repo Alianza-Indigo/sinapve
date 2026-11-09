@@ -18,10 +18,12 @@ import {
   createServiceDirectoryEntry,
   createTrainingOperationsRecord,
   createTrainingProgram,
-  listModuleRecords
+  listModuleRecords,
+  listReports,
+  listCases
 } from "@/server/data/repository";
 import { DatabaseNotConfiguredError } from "@/server/db";
-import { canReadModule } from "@/server/domain/access";
+import { canReadModule, canReadCase, canReadReport, canWriteModule, isSuperAdmin } from "@/server/domain/access";
 import type { PlatformModuleId } from "@/server/domain/types";
 import { FieldEncryptionNotConfiguredError } from "@/server/security/field-crypto";
 
@@ -67,6 +69,20 @@ export async function GET(request: Request, { params }: { params: Promise<{ modu
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
 
+  if (moduleId === "reports") {
+    const reports = (await listReports()).filter((item) => canReadReport(actor, item));
+    return Response.json({ data: reports.map((item) => ({
+      id: item.id, title: item.folio, status: item.status, owner: item.schoolName,
+      updatedAt: item.createdAt, detail: item.description
+    })) });
+  }
+  if (moduleId === "cases") {
+    const cases = (await listCases()).filter((item) => canReadCase(actor, item));
+    return Response.json({ data: cases.map((item) => ({
+      id: item.id, title: item.folio, status: item.state, owner: item.assignedTo,
+      updatedAt: item.timeline[0]?.at ?? "", detail: item.title
+    })) });
+  }
   const data = await listModuleRecords(moduleId as PlatformModuleId);
   return Response.json({ data });
 }
@@ -161,7 +177,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ mod
     return Response.json({ error: "not_found" }, { status: 404 });
   }
 
-  if (!canReadModule(actor, moduleId)) {
+  if (!canWriteModule(actor, moduleId)) {
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
 
@@ -169,6 +185,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ mod
   const parsed = moduleRecordSchema.safeParse(body);
   if (!parsed.success) {
     return Response.json({ error: "invalid_module_record", issues: parsed.error.flatten() }, { status: 400 });
+  }
+
+  if (!isSuperAdmin(actor) && parsed.data.organizationPublicId &&
+      parsed.data.organizationPublicId !== actor.scope.organizationId) {
+    return Response.json({ error: "forbidden_scope" }, { status: 403 });
   }
 
   try {

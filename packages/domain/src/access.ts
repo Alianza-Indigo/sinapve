@@ -91,7 +91,7 @@ export function effectivePermissions(actor: Actor): Array<{ capability: Capabili
   return result;
 }
 
-export function canReadReport(actor: Actor, report: HelpReport) {
+export function canReadReport(actor: Actor, report: Pick<HelpReport, "organizationId" | "state">) {
   if (isSuperAdmin(actor)) return true;
   if (!hasCapability(actor, "report:read")) return false;
   if (actor.roles.includes("FEDERAL")) return false;
@@ -106,6 +106,43 @@ export function canReadCase(actor: Actor, caseFile: CaseFile, sensitivity: Sensi
   if (actor.scope.assignedCaseIds?.includes(caseFile.id)) return true;
   if (actor.scope.organizationId === caseFile.organizationId) return true;
   return actor.roles.includes("AUDITOR") || actor.roles.includes("PRIVACY_OFFICER");
+}
+
+export function canUpdateCase(actor: Actor, caseFile: Pick<CaseFile, "id" | "organizationId">) {
+  if (!hasCapability(actor, "case:update")) return false;
+  if (isSuperAdmin(actor)) return true;
+  return Boolean(
+    (actor.scope.organizationId && actor.scope.organizationId === caseFile.organizationId) ||
+    actor.scope.assignedCaseIds?.includes(caseFile.id)
+  );
+}
+
+export function canCreateCaseFromReport(actor: Actor, report: Pick<HelpReport, "organizationId" | "state">) {
+  if (!hasCapability(actor, "case:update")) return false;
+  if (isSuperAdmin(actor)) return true;
+  return Boolean(actor.scope.organizationId && actor.scope.organizationId === report.organizationId);
+}
+
+// Read access to a module never grants its mutation permission.
+const moduleWriters: Record<string, Role[]> = {
+  reports: ["APVE", "UEPE"], cases: ["APVE", "UEPE", "EMIR"],
+  protocols: ["UEPE"], risk: ["UEPE", "FEDERAL"], map: ["UEPE", "FEDERAL"],
+  interventions: ["APVE", "UEPE", "EMIR"], escalations: ["APVE", "UEPE", "EMIR"],
+  institutions: ["SCHOOL_DIRECTOR", "UEPE", "FEDERAL"], directory: ["UEPE"],
+  training: ["UEPE", "FEDERAL"], community: ["APVE", "SCHOOL_DIRECTOR", "UEPE"],
+  communications: ["UEPE", "FEDERAL"], audit: ["AUDITOR"],
+  analytics: ["UEPE", "FEDERAL"], informes: ["UEPE", "FEDERAL"],
+  privacy: ["PRIVACY_OFFICER"], adaptations: ["UEPE"],
+  configuration: ["TECH_ADMIN"], "public-portal": ["UEPE", "FEDERAL"],
+  notifications: ["APVE", "UEPE"], integrations: ["TECH_ADMIN"]
+};
+
+export function canWriteModule(actor: Actor, moduleId: string) {
+  if (isSuperAdmin(actor)) return true;
+  if (!canReadModule(actor, moduleId)) return false;
+  // Generic module writes must be attached to a verified institution.
+  if (!actor.scope.organizationId) return false;
+  return (moduleWriters[moduleId] ?? []).some((role) => actor.roles.includes(role));
 }
 
 export function explainAccess(actor: Actor, resource: "report" | "case" | "analytics") {

@@ -20,6 +20,7 @@ const signedHeaderNames = [
 
 export type SignatureVerification =
   | { enabled: false; valid: true; reason: "signing_disabled" }
+  | { enabled: false; valid: false; reason: "signing_key_required" }
   | { enabled: true; valid: true; reason: "verified" }
   | { enabled: true; valid: false; reason: "missing_signature" | "invalid_signature" | "stale_timestamp" };
 
@@ -39,7 +40,13 @@ function canonicalMessage(headers: Headers, timestamp: string) {
 
 export function verifyGatewaySignature(headers: Headers, now = Date.now(), maxSkewMs = 5 * 60_000): SignatureVerification {
   const key = process.env.SINAPVE_GATEWAY_SIGNING_KEY;
-  if (!key) return { enabled: false, valid: true, reason: "signing_disabled" };
+  if (!key) {
+    // Unsigned role headers must never become an identity in production.
+    if (process.env.NODE_ENV === "production") {
+      return { enabled: false, valid: false, reason: "signing_key_required" };
+    }
+    return { enabled: false, valid: true, reason: "signing_disabled" };
+  }
 
   const signature = headers.get("x-sinapve-signature");
   const timestamp = headers.get("x-sinapve-timestamp");
