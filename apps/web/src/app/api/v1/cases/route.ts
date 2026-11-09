@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { resolveActor } from "@/server/auth/session-actor";
-import { createCaseFromReport } from "@/server/data/repository";
+import { createCaseFromReport, getReportAccessRecord } from "@/server/data/repository";
 import { DatabaseNotConfiguredError } from "@/server/db";
-import { hasCapability } from "@/server/domain/access";
+import { canCreateCaseFromReport, hasCapability } from "@/server/domain/access";
 
 export const runtime = "nodejs";
 
@@ -23,11 +23,15 @@ export async function POST(request: Request) {
   if (!parsed.success) return Response.json({ error: "invalid_case", issues: parsed.error.flatten() }, { status: 400 });
 
   try {
+    const report = await getReportAccessRecord(parsed.data.reportId);
+    if (!report) return Response.json({ error: "report_not_found" }, { status: 404 });
+    if (!canCreateCaseFromReport(actor, report)) return Response.json({ error: "forbidden" }, { status: 403 });
     const data = await createCaseFromReport({ ...parsed.data, actor });
     return Response.json({ data }, { status: 201 });
   } catch (error) {
     if (error instanceof DatabaseNotConfiguredError) return Response.json({ error: "database_not_configured", message: error.message }, { status: 503 });
     if (error instanceof Error && error.message === "REPORT_NOT_FOUND") return Response.json({ error: "report_not_found" }, { status: 404 });
+    if (error instanceof Error && error.message === "REPORT_ACCESS_DENIED") return Response.json({ error: "forbidden" }, { status: 403 });
     throw error;
   }
 }

@@ -7,7 +7,7 @@ import { queueReportDraft } from "@/lib/offline/reports";
 type SubmitState =
   | { status: "idle" }
   | { status: "submitting" }
-  | { status: "success"; folio: string }
+  | { status: "success"; folio: string; followUpToken: string }
   | { status: "queued" }
   | { status: "error"; message: string };
 
@@ -44,8 +44,8 @@ export function ReportForm() {
         setSubmitState({ status: "error", message: "No se pudo registrar. Intenta de nuevo o usa el canal de emergencia." });
         return;
       }
-      const data = (await response.json()) as { folio: string };
-      setSubmitState({ status: "success", folio: data.folio });
+      const data = (await response.json()) as { folio: string; followUpToken: string };
+      setSubmitState({ status: "success", folio: data.folio, followUpToken: data.followUpToken });
       form.reset();
     } catch {
       // Falla de red durante el envío: se guarda offline para reintento.
@@ -126,6 +126,8 @@ export function ReportForm() {
       {submitState.status === "success" ? (
         <p className="status-pill safe" role="status">
           Folio seguro: {submitState.folio}
+          <span style={{ display: "block", overflowWrap: "anywhere" }}>Clave privada de seguimiento: {submitState.followUpToken}</span>
+          <span style={{ display: "block" }}>Guarda la clave. Se necesita para enviar mensajes posteriores; no se mostrara de nuevo.</span>
         </p>
       ) : null}
       {submitState.status === "queued" ? (

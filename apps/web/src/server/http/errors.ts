@@ -42,6 +42,9 @@ export function mapDomainError(error: unknown): Response | null {
     return Response.json({ error: "field_encryption_not_configured", message: error.message }, { status: 503 });
   }
   if (error instanceof Error) {
+    if (error.message === "REPORT_ACCESS_DENIED") {
+      return Response.json({ error: "forbidden" }, { status: 403 });
+    }
     if (notFoundMessages.has(error.message)) {
       return Response.json({ error: error.message.toLowerCase() }, { status: 404 });
     }

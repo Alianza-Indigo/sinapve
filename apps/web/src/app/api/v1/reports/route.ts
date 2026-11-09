@@ -84,6 +84,7 @@ export async function POST(request: Request) {
     {
       id: report.id,
       folio: report.folio,
+      followUpToken: report.followUpToken,
       status: report.status,
       suggestedSeverity: report.suggestedSeverity,
       audit

@@ -56,3 +56,22 @@ describe("RBAC + ABAC", () => {
     expect(canReadCase({ ...actor, roles: ["PRIVACY_OFFICER"] }, caseFile, "altamente_sensible")).toBe(true);
   });
 });
+
+
+describe("institutional write boundaries", () => {
+  it("does not allow modifying another school's case", async () => {
+    const { canUpdateCase, canCreateCaseFromReport } = await import("./access");
+    const foreign = { id: "foreign-case", organizationId: "other-school" };
+    expect(canUpdateCase(actor, foreign)).toBe(false);
+    expect(canUpdateCase(actor, { id: "case_001", organizationId: "other-school" })).toBe(true);
+    expect(canCreateCaseFromReport(actor, { organizationId: "other-school", state: "CHH" })).toBe(false);
+    expect(canCreateCaseFromReport(actor, { organizationId: "org_secundaria_norte", state: "CHH" })).toBe(true);
+  });
+
+  it("rejects write actions for readers in generic modules", async () => {
+    const { canWriteModule } = await import("./access");
+    expect(canWriteModule(actor, "community")).toBe(true);
+    expect(canWriteModule(actor, "training")).toBe(false);
+    expect(canWriteModule({ ...actor, roles: ["AUDITOR"] }, "analytics")).toBe(false);
+  });
+});

@@ -1,4 +1,6 @@
 import { nanoid } from "nanoid";
+import { createHash, timingSafeEqual } from "crypto";
+import { canCreateCaseFromReport, canUpdateCase, canReadReport } from "../domain/access";
 import { and, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { DatabaseNotConfiguredError, getDb, isDatabaseConfigured } from "../db";
 import { decryptSensitiveText, encryptSensitiveText, sha256Digest } from "../security/field-crypto";
@@ -138,14 +140,23 @@ function readMetadataString(metadata: Record<string, unknown>, key: string, fall
   return typeof value === "string" ? value : fallback;
 }
 
-async function findCaseRow(caseId: string) {
+async function findCaseRow(caseId: string, actor?: Actor) {
   const db = getDb();
   const [caseRow] = await db
-    .select({ id: cases.id, publicId: cases.publicId, folio: cases.folio, organizationId: cases.organizationId, severity: cases.severity })
+    .select({
+      id: cases.id, publicId: cases.publicId, folio: cases.folio,
+      organizationId: cases.organizationId, organizationPublicId: organizations.publicId,
+      severity: cases.severity
+    })
     .from(cases)
+    .leftJoin(organizations, eq(cases.organizationId, organizations.id))
     .where(or(eq(cases.publicId, caseId), eq(cases.folio, caseId)))
     .limit(1);
-  return caseRow ?? null;
+  if (!caseRow) return null;
+  if (actor && !canUpdateCase(actor, {
+    id: caseRow.publicId, organizationId: caseRow.organizationPublicId ?? ""
+  })) return null;
+  return caseRow;
 }
 
 async function findOrganizationRow(organizationPublicId: string) {
@@ -162,12 +173,29 @@ async function findReportRow(reportId: string) {
       publicId: reports.publicId,
       folio: reports.folio,
       organizationId: reports.organizationId,
+      organizationPublicId: organizations.publicId,
+      stateCode: organizations.stateCode,
+      metadata: reports.metadata,
       suggestedSeverity: reports.suggestedSeverity
     })
     .from(reports)
+    .leftJoin(organizations, eq(reports.organizationId, organizations.id))
     .where(or(eq(reports.publicId, reportId), eq(reports.folio, reportId)))
     .limit(1);
   return report ?? null;
+}
+
+export async function getReportAccessRecord(reportId: string) {
+  if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
+  const report = await findReportRow(reportId);
+  return report ? { organizationId: report.organizationPublicId ?? "", state: report.stateCode ?? "" } : null;
+}
+
+function validFollowUpToken(token: string | undefined, expectedDigest: unknown) {
+  if (!token || token.length < 32 || token.length > 160 || typeof expectedDigest !== "string") return false;
+  const actual = createHash("sha256").update(token).digest();
+  const expected = Buffer.from(expectedDigest, "hex");
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
 async function findUserRow(externalSubject: string) {
@@ -406,6 +434,8 @@ export async function createReport(input: {
   }
 
   const id = `rep_${nanoid(10)}`;
+  const followUpToken = nanoid(48);
+  const followUpTokenDigest = sha256Digest(followUpToken);
   const folio = `SNPV-${nanoid(4).toUpperCase()}-${nanoid(4).toUpperCase()}`;
   const suggestedSeverity = suggestSeverity(input.description, input.safetyNow);
   const [report] = await db
@@ -423,6 +453,7 @@ export async function createReport(input: {
         schoolName: input.schoolName,
         source: "public_help_request",
         piiHandling: input.mode,
+        followUpTokenDigest,
         clientRequestId: input.clientRequestId,
         affectedPeople: input.affectedPeople ?? [],
         contactPreference: input.contactPreference ?? {},
@@ -477,6 +508,7 @@ export async function createReport(input: {
   return {
     id: report.publicId,
     folio,
+    followUpToken,
     mode: input.mode,
     reporterType: input.reporterType,
     organizationId: organization.publicId,
@@ -497,12 +529,23 @@ export async function createReportMessage(input: {
   senderType: "reporter" | "institution";
   body: string;
   actor?: Actor;
+  followUpToken?: string;
 }) {
   if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
 
   const db = getDb();
   const report = await findReportRow(input.reportId);
   if (!report) throw new Error("REPORT_NOT_FOUND");
+  if (input.senderType === "reporter") {
+    if (!validFollowUpToken(input.followUpToken, report.metadata?.followUpTokenDigest)) {
+      throw new Error("REPORT_ACCESS_DENIED");
+    }
+  } else if (!input.actor || !canReadReport(input.actor, {
+    organizationId: report.organizationPublicId ?? "",
+    state: report.stateCode ?? ""
+  })) {
+    throw new Error("REPORT_ACCESS_DENIED");
+  }
 
   const publicId = `msg_${nanoid(10)}`;
   const [message] = await db
@@ -1063,6 +1106,10 @@ export async function createCaseFromReport(input: {
   const db = getDb();
   const report = await findReportRow(input.reportId);
   if (!report) throw new Error("REPORT_NOT_FOUND");
+  if (!canCreateCaseFromReport(input.actor, {
+    organizationId: report.organizationPublicId ?? "",
+    state: report.stateCode ?? ""
+  })) throw new Error("REPORT_ACCESS_DENIED");
 
   const publicId = `case_${nanoid(10)}`;
   const folio = `CASO-${nanoid(5).toUpperCase()}-${nanoid(4).toUpperCase()}`;
@@ -1110,7 +1157,7 @@ export async function updateCaseState(input: {
   if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
 
   const db = getDb();
-  const caseRow = await findCaseRow(input.caseId);
+  const caseRow = await findCaseRow(input.caseId, input.actor);
   if (!caseRow) throw new Error("CASE_NOT_FOUND");
 
   const updateValues: { state: CaseState; protectionSummaryCiphertext?: string; closedAt: Date | null } = {
@@ -1153,7 +1200,7 @@ export async function assignCase(input: {
   if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
 
   const db = getDb();
-  const caseRow = await findCaseRow(input.caseId);
+  const caseRow = await findCaseRow(input.caseId, input.actor);
   if (!caseRow) throw new Error("CASE_NOT_FOUND");
   const user = await findUserRow(input.assigneeExternalSubject);
   if (!user) throw new Error("USER_NOT_FOUND");
@@ -1199,7 +1246,7 @@ export async function addCaseTimelineEvent(input: {
   if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
 
   const db = getDb();
-  const caseRow = await findCaseRow(input.caseId);
+  const caseRow = await findCaseRow(input.caseId, input.actor);
   if (!caseRow) throw new Error("CASE_NOT_FOUND");
 
   const [event] = await db
@@ -1234,7 +1281,7 @@ export async function createInterventionPlan(input: {
   if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
 
   const db = getDb();
-  const caseRow = await findCaseRow(input.caseId);
+  const caseRow = await findCaseRow(input.caseId, input.actor);
   if (!caseRow) throw new Error("CASE_NOT_FOUND");
 
   const publicId = `plan_${nanoid(10)}`;
@@ -1278,7 +1325,7 @@ export async function createReferral(input: {
   if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
 
   const db = getDb();
-  const caseRow = await findCaseRow(input.caseId);
+  const caseRow = await findCaseRow(input.caseId, input.actor);
   if (!caseRow) throw new Error("CASE_NOT_FOUND");
 
   const publicId = `ref_${nanoid(10)}`;
@@ -1368,7 +1415,7 @@ export async function startPersistedProtocolRun(input: { caseId: string; actor: 
   if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
 
   const db = getDb();
-  const caseRow = await findCaseRow(input.caseId);
+  const caseRow = await findCaseRow(input.caseId, input.actor);
   if (!caseRow) throw new Error("CASE_NOT_FOUND");
 
   const version = await ensureProtocolVersion(caseRow.severity);
@@ -1573,7 +1620,7 @@ export async function createCaseControlRecord(input:
   if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
 
   const db = getDb();
-  const caseRow = await findCaseRow(input.caseId);
+  const caseRow = await findCaseRow(input.caseId, input.actor);
   if (!caseRow) throw new Error("CASE_NOT_FOUND");
 
   let result: { id: string; type: string; status: string };
@@ -1699,7 +1746,7 @@ export async function recordCaseEvidence(input: {
   if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
 
   const db = getDb();
-  const caseRow = await findCaseRow(input.caseId);
+  const caseRow = await findCaseRow(input.caseId, input.actor);
   if (!caseRow) throw new Error("CASE_NOT_FOUND");
   const actorRow = await findUserRow(input.actor.id);
   const publicId = `evid_${nanoid(10)}`;
@@ -1842,7 +1889,7 @@ export async function createProtocolGovernanceRecord(input:
     return row;
   }
 
-  const caseRow = await findCaseRow(input.caseId);
+  const caseRow = await findCaseRow(input.caseId, input.actor);
   if (!caseRow) throw new Error("CASE_NOT_FOUND");
   const toVersion = await findProtocolVersionRow(input.toProtocolCode);
   if (!toVersion) throw new Error("PROTOCOL_VERSION_NOT_FOUND");
@@ -2494,7 +2541,7 @@ export async function createEmirDispatch(input: {
   const db = getDb();
   const organization = input.organizationPublicId ? await findOrganizationRow(input.organizationPublicId) : null;
   if (input.organizationPublicId && !organization) throw new Error("ORGANIZATION_NOT_FOUND");
-  const caseRow = input.caseId ? await findCaseRow(input.caseId) : null;
+  const caseRow = input.caseId ? await findCaseRow(input.caseId, input.actor) : null;
   if (input.caseId && !caseRow) throw new Error("CASE_NOT_FOUND");
   const publicId = `emir_${nanoid(10)}`;
   const [dispatch] = await db
@@ -3903,7 +3950,7 @@ export async function createAndDispatchNotification(input: {
   if (containsSensitiveDetail(input.safeSummary)) throw new Error("SENSITIVE_DETAIL_IN_NOTIFICATION");
 
   const db = getDb();
-  const caseRow = input.caseId ? await findCaseRow(input.caseId) : null;
+  const caseRow = input.caseId ? await findCaseRow(input.caseId, input.actor) : null;
   const user = input.userExternalSubject ? await findUserRow(input.userExternalSubject) : null;
   const now = new Date();
   const nowMinutes = input.nowMinutes ?? now.getHours() * 60 + now.getMinutes();
