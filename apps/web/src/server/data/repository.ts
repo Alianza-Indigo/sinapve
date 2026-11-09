@@ -1,6 +1,6 @@
 import { nanoid } from "nanoid";
 import { createHash, timingSafeEqual } from "crypto";
-import { canCreateCaseFromReport, canUpdateCase, canReadReport } from "../domain/access";
+import { canCreateCaseFromReport, canUpdateCase } from "../domain/access";
 import { and, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { DatabaseNotConfiguredError, getDb, isDatabaseConfigured } from "../db";
 import { decryptSensitiveText, encryptSensitiveText, sha256Digest } from "../security/field-crypto";
