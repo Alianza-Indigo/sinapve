@@ -95,7 +95,7 @@ import { enqueueDurable } from "../jobs/adapter";
 import { rankDocuments, extractiveSnippet } from "../ai/rag";
 import { callAiGateway, isAiConfigured } from "../ai/gateway";
 import { containsSensitiveDetail, shouldDeliver, type NotificationPriority } from "../notifications/policy";
-import { dispatchToChannel, type NotificationChannel } from "../notifications/dispatch";
+import { dispatchToChannel, isChannelConfigured, type NotificationChannel } from "../notifications/dispatch";
 import type { Actor, CaseFile, CaseState, CaseTimelineEvent, HelpReport, PlatformModuleId, PlatformModuleSummary, PlatformRecord, ReportMode, Severity } from "../domain/types";
 
 export type LiveDataStatus = {
