@@ -3212,7 +3212,7 @@ function applyExactDashboardWidgets<T extends { id: string; title: string; value
 export async function getDashboardModel(actor: Actor, scopeId?: string) {
   const preset = presetForRoles(actor.roles);
   const [allReports, allCases, aggregates] = isDatabaseConfigured()
-    ? await Promise.all([listReports(), listCases(), getDashboardAggregates(actor)])
+    ? await Promise.all([listReports({ actor }), listCases({ actor }), getDashboardAggregates(actor)])
     : [[], [], undefined];
   const visibleReports = allReports.filter((report) => canReadReport(actor, report));
   const visibleCases = allCases.filter((caseFile) => canReadCase(actor, caseFile));
@@ -3284,7 +3284,7 @@ export async function getDashboardModel(actor: Actor, scopeId?: string) {
 
 export async function getCertifiedWidgetsForActor(actor: Actor) {
   if (!isDatabaseConfigured()) return buildCertifiedWidgets([], []);
-  const [allReports, allCases] = await Promise.all([listReports(), listCases()]);
+  const [allReports, allCases] = await Promise.all([listReports({ actor }), listCases({ actor })]);
   const reports_ = allReports.filter((report) => canReadReport(actor, report));
   const cases_ = allCases.filter((caseFile) => canReadCase(actor, caseFile));
   const totals = await getDashboardRecordTotals(actor);
@@ -4096,19 +4096,15 @@ export async function generateReportDraft(input: {
   actor: Actor;
 }) {
   if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
-  const [reports_, cases_] = await Promise.all([listReports(), listCases()]);
-  const widgets = buildCertifiedWidgets(reports_, cases_);
-  const highlights = widgets
-    .filter((widget) => widget.series.length > 0)
-    .slice(0, 6)
-    .map((widget) => `${widget.title}: ${widget.valueLabel}`)
-    .join("; ");
-  const narrative = `Borrador basado en metricas certificadas al ${new Date().toISOString()}. ${highlights || "Sin datos suficientes para el periodo."} Requiere validacion humana antes de publicar.`;
+  const totals = await getDashboardRecordTotals(input.actor);
+  const sla = totals.cases ? Math.round(totals.compliant * 100 / totals.cases) : 0;
+  const highlights = `Reportes: ${totals.reports}; expedientes: ${totals.cases}; casos activos: ${totals.active}; cumplimiento de SLA: ${sla}%`;
+  const narrative = `Borrador basado en agregados SQL completos al ${new Date().toISOString()}. ${highlights}. Requiere validacion humana antes de publicar.`;
 
   return createGovernanceRecord("informes", {
     title: input.title,
     reportType: input.reportType,
-    metadata: { ...(input.scope ?? {}), certified: true, reports: reports_.length, cases: cases_.length },
+    metadata: { ...(input.scope ?? {}), certified: true, reports: totals.reports, cases: totals.cases },
     narrative,
     actor: input.actor
   });
@@ -4139,7 +4135,8 @@ export async function createAndDispatchNotification(input: {
   if (input.caseId && !caseRow) throw new Error("CASE_NOT_FOUND");
 
   const deliveries: Array<{ channel: NotificationChannel; status: string; reason: string; id: string }> = [];
-  for (const channel of [...new Set(input.channels)]) {
+  // Always persist an in-app notification, even if an external provider is unavailable.
+  for (const channel of [...new Set<NotificationChannel>(["in_app", ...input.channels])]) {
     const [row] = await db.insert(notifications).values({
       publicId: `ntf_${nanoid(10)}`,
       caseId: caseRow?.id,
