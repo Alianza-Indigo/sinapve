@@ -95,7 +95,8 @@ export function canReadReport(actor: Actor, report: Pick<HelpReport, "organizati
   if (isSuperAdmin(actor)) return true;
   if (!hasCapability(actor, "report:read")) return false;
   if (actor.roles.includes("FEDERAL")) return false;
-  return actor.scope.organizationId === report.organizationId || actor.scope.stateCode === report.state;
+  if (actor.scope.organizationId && actor.scope.organizationId === report.organizationId) return true;
+  return Boolean(actor.roles.includes("UEPE") && actor.scope.stateCode && actor.scope.stateCode === report.state);
 }
 
 export function canReadCase(actor: Actor, caseFile: CaseFile, sensitivity: Sensitivity = "confidencial") {
@@ -143,6 +144,17 @@ export function canWriteModule(actor: Actor, moduleId: string) {
   // Generic module writes must be attached to a verified institution.
   if (!actor.scope.organizationId) return false;
   return (moduleWriters[moduleId] ?? []).some((role) => actor.roles.includes(role));
+}
+
+export function canManageInstitutionalUsers(actor: Actor) {
+  return isSuperAdmin(actor) || actor.roles.includes("TECH_ADMIN");
+}
+
+export function canProvisionRole(actor: Actor, role: string) {
+  const roles: Role[] = ["STUDENT", "FAMILY", "SCHOOL_STAFF", "APVE", "SCHOOL_DIRECTOR", "UEPE", "EMIR", "FEDERAL", "AUDITOR", "PRIVACY_OFFICER", "TECH_ADMIN", "SUPER_ADMIN"];
+  if (!roles.includes(role as Role)) return false;
+  if (["SUPER_ADMIN", "TECH_ADMIN", "FEDERAL", "AUDITOR", "PRIVACY_OFFICER"].includes(role)) return isSuperAdmin(actor);
+  return canManageInstitutionalUsers(actor);
 }
 
 export function explainAccess(actor: Actor, resource: "report" | "case" | "analytics") {
