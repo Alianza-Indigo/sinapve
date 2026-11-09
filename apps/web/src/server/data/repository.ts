@@ -3099,6 +3099,97 @@ async function getDashboardAggregates(actor: Actor) {
   };
 }
 
+// Exact scoped aggregates for KPI cards and common charts. Individual
+// case/report lists stay paginated, preventing huge decrypt-in-memory reads.
+async function getDashboardRecordTotals(actor: Actor, selectedOrganization?: string) {
+  const db = getDb();
+  const global = isSuperAdmin(actor);
+  const nationalAggregate = actor.roles.includes("FEDERAL");
+  const orgScope = selectedOrganization ? eq(organizations.publicId, selectedOrganization) : undefined;
+  const reportAccess = global || nationalAggregate
+    ? undefined
+    : actor.roles.includes("UEPE") && actor.scope.stateCode
+      ? eq(organizations.stateCode, actor.scope.stateCode)
+      : hasCapability(actor, "report:read") && actor.scope.organizationId
+        ? eq(organizations.publicId, actor.scope.organizationId)
+        : sql`false`;
+  const caseAccess = global || nationalAggregate ||
+    actor.roles.includes("AUDITOR") || actor.roles.includes("PRIVACY_OFFICER")
+    ? undefined
+    : actor.roles.includes("UEPE") && actor.scope.stateCode
+      ? eq(organizations.stateCode, actor.scope.stateCode)
+      : hasCapability(actor, "case:read")
+        ? or(
+            actor.scope.organizationId ? eq(organizations.publicId, actor.scope.organizationId) : sql`false`,
+            actor.scope.assignedCaseIds?.length
+              ? inArray(cases.publicId, actor.scope.assignedCaseIds)
+              : sql`false`
+          )
+        : sql`false`;
+
+  const reportWhere = and(reportAccess, orgScope);
+  const caseWhere = and(caseAccess, orgScope);
+  const startOfMonth = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)).toISOString();
+  const [[reportCount], [caseCount], bySeverity] = await Promise.all([
+    db.select({
+      total: sql<number>`count(*)::int`,
+      thisMonth: sql<number>`count(*) filter (where ${reports.createdAt} >= ${startOfMonth})::int`
+    }).from(reports).leftJoin(organizations, eq(reports.organizationId, organizations.id)).where(reportWhere),
+    db.select({
+      total: sql<number>`count(*)::int`,
+      active: sql<number>`count(*) filter (where ${cases.state} <> 'cerrado')::int`,
+      critical: sql<number>`count(*) filter (where ${cases.severity} = 'critica' and ${cases.state} <> 'cerrado')::int`,
+      followedUp: sql<number>`count(*) filter (where ${cases.state} = 'en_seguimiento')::int`,
+      closed: sql<number>`count(*) filter (where ${cases.state} = 'cerrado')::int`,
+      compliant: sql<number>`count(*) filter (where ${cases.firstResponseMinutes} is not null and ${cases.firstResponseMinutes} <= ${cases.slaMinutes})::int`
+    }).from(cases).leftJoin(organizations, eq(cases.organizationId, organizations.id)).where(caseWhere),
+    db.select({ severity: cases.severity, total: sql<number>`count(*)::int` })
+      .from(cases).leftJoin(organizations, eq(cases.organizationId, organizations.id))
+      .where(caseWhere).groupBy(cases.severity)
+  ]);
+  return {
+    reports: Number(reportCount?.total ?? 0),
+    reportsMonth: Number(reportCount?.thisMonth ?? 0),
+    cases: Number(caseCount?.total ?? 0),
+    active: Number(caseCount?.active ?? 0),
+    critical: Number(caseCount?.critical ?? 0),
+    followedUp: Number(caseCount?.followedUp ?? 0),
+    closed: Number(caseCount?.closed ?? 0),
+    compliant: Number(caseCount?.compliant ?? 0),
+    severity: Object.fromEntries(bySeverity.map(row => [row.severity, Number(row.total)]))
+  };
+}
+
+type DashboardTotals = Awaited<ReturnType<typeof getDashboardRecordTotals>>;
+
+function applyExactDashboardWidgets<T extends { id: string; title: string; valueLabel: string; series: Array<{ label: string; value: number; target?: number }> }>(
+  widgets: T[], totals: DashboardTotals
+): T[] {
+  const compliance = totals.cases ? Math.round(totals.compliant * 100 / totals.cases) : 0;
+  return widgets.map((widget) => {
+    if (widget.id === "G02_REPORTS_VS_CONFIRMED") {
+      return { ...widget, valueLabel: `${totals.reports}/${totals.cases}`, series: [
+        { label: "Reportes", value: totals.reports }, { label: "Casos", value: totals.cases }
+      ] };
+    }
+    if (widget.id === "G03_SEVERITY_DISTRIBUTION") {
+      return { ...widget, valueLabel: `${totals.critical} críticos activos`, series:
+        ["leve", "moderada", "grave", "critica"].map(label => ({ label, value: totals.severity[label] ?? 0 }))
+      };
+    }
+    if (widget.id === "G05_SLA_COMPLIANCE") {
+      return { ...widget, valueLabel: totals.cases ? `${compliance}%` : "Sin casos",
+        series: totals.cases ? [{ label: "SLA", value: compliance, target: 90 }] : [] };
+    }
+    if (widget.id === "G01_CASES_OVER_TIME" || widget.id === "G04_FIRST_RESPONSE" ||
+        widget.id === "G10_TERRITORIAL_RISK") {
+      return { ...widget, title: `${widget.title} (muestra reciente)`,
+        valueLabel: "Muestra: últimos 100 registros" };
+    }
+    return widget;
+  });
+}
+
 // Sistema de Dashboards: compone el panel del actor a partir de su preset (rol)
 // con datos reales ya filtrados por permiso. Fase 3: acepta un alcance (scopeId)
 // para acotar (drill-down); las opciones se derivan de los datos ya visibles, de
@@ -3128,7 +3219,10 @@ export async function getDashboardModel(actor: Actor, scopeId?: string) {
   const reports = effectiveScope ? visibleReports.filter((report) => report.organizationId === effectiveScope) : visibleReports;
   const cases = effectiveScope ? visibleCases.filter((caseFile) => caseFile.organizationId === effectiveScope) : visibleCases;
 
-  const widgets = buildCertifiedWidgets(reports, cases);
+  const totals = isDatabaseConfigured() ? await getDashboardRecordTotals(actor, effectiveScope || undefined) : null;
+  const widgets = totals
+    ? applyExactDashboardWidgets(buildCertifiedWidgets(reports, cases), totals)
+    : buildCertifiedWidgets(reports, cases);
   const ctx = { actor, cases, reports, widgets, aggregates };
   const selected = preset.widgetIds
     .map((id) => widgets.find((widget) => widget.id === id))
@@ -3146,9 +3240,23 @@ export async function getDashboardModel(actor: Actor, scopeId?: string) {
     ? labelByOrg.get(effectiveScope) ?? effectiveScope
     : actor.scope.organizationId ?? actor.scope.stateCode ?? "Alcance completo";
 
+  const computedKpis = resolveKpis(preset, ctx);
+  const exactDisplays: Record<string, string> = totals ? {
+    casos_activos: String(totals.active),
+    casos_criticos: String(totals.critical),
+    mis_criticos: String(totals.critical),
+    reportes_mes: String(totals.reportsMonth),
+    carga_trabajo: String(totals.active),
+    sla_cumplimiento: totals.cases ? `${Math.round(totals.compliant * 100 / totals.cases)}%` : "—"
+  } : {};
+  const kpis = computedKpis.map((kpi) =>
+    exactDisplays[kpi.key] === undefined ? kpi : {
+      ...kpi, display: exactDisplays[kpi.key], delta: undefined
+    });
+
   return {
     preset,
-    kpis: resolveKpis(preset, ctx),
+    kpis,
     panels: buildDashboardPanels(preset, ctx),
     widgets: selected,
     territorial,
@@ -3164,7 +3272,8 @@ export async function getCertifiedWidgetsForActor(actor: Actor) {
   const [allReports, allCases] = await Promise.all([listReports(), listCases()]);
   const reports_ = allReports.filter((report) => canReadReport(actor, report));
   const cases_ = allCases.filter((caseFile) => canReadCase(actor, caseFile));
-  return buildCertifiedWidgets(reports_, cases_);
+  const totals = await getDashboardRecordTotals(actor);
+  return applyExactDashboardWidgets(buildCertifiedWidgets(reports_, cases_), totals);
 }
 
 // EP-18: indicadores agregados para el portal publico (con supresion de celdas
