@@ -4,7 +4,7 @@ export function firstResponseMinutes(caseFile: Pick<CaseFile, "firstResponseMinu
   return caseFile.firstResponseMinutes;
 }
 
-export function slaCompliance(cases: Array<Pick<CaseFile, "firstResponseMinutes" | "slaMinutes">>) {
+export function slaCompliance(cases: Array<Pick<CaseFile, "firstResponseMinutes" | "slaMinutes" | "hasFirstResponse">>) {
   if (cases.length === 0) return 0;
   const compliant = cases.filter(
     (item) => item.hasFirstResponse !== false && item.firstResponseMinutes <= item.slaMinutes
