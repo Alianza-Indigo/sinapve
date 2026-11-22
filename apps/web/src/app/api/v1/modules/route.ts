@@ -11,6 +11,6 @@ export async function GET(request: Request) {
     return Response.json({ error: "unauthorized", message: "Falta identidad institucional en encabezados seguros." }, { status: 401 });
   }
 
-  const modules = await listPlatformModules();
+  const modules = await listPlatformModules(actor);
   return Response.json({ data: modules.filter((module) => canReadModule(actor, module.id)) });
 }

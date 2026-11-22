@@ -8,6 +8,7 @@ type Capability =
   | "protocol:run"
   | "protocol:author"
   | "analytics:read"
+  | "analytics:write"
   | "audit:read"
   | "institution:read"
   | "adaptation:read"
@@ -16,6 +17,7 @@ type Capability =
   | "intervention:read"
   | "referral:read"
   | "training:read"
+  | "training:certify"
   | "community:read"
   | "reporting:read"
   | "configuration:read"
@@ -31,6 +33,7 @@ const allCapabilities: Capability[] = [
   "protocol:run",
   "protocol:author",
   "analytics:read",
+  "analytics:write",
   "audit:read",
   "institution:read",
   "adaptation:read",
@@ -39,6 +42,7 @@ const allCapabilities: Capability[] = [
   "intervention:read",
   "referral:read",
   "training:read",
+  "training:certify",
   "community:read",
   "reporting:read",
   "configuration:read",
@@ -61,9 +65,9 @@ const roleCapabilities: Record<Role, Capability[]> = {
   SCHOOL_STAFF: ["report:create"],
   APVE: ["report:read", "case:read", "case:update", "protocol:run", "analytics:read", "intervention:read", "referral:read", "institution:read", "training:read", "community:read", "notification:read"],
   SCHOOL_DIRECTOR: ["report:read", "case:read", "analytics:read", "intervention:read", "institution:read", "training:read", "community:read", "reporting:read"],
-  UEPE: ["report:read", "case:read", "case:update", "protocol:run", "protocol:author", "analytics:read", "intervention:read", "referral:read", "institution:read", "adaptation:read", "training:read", "community:read", "reporting:read", "notification:read", "content:publish"],
+  UEPE: ["report:read", "case:read", "case:update", "protocol:run", "protocol:author", "analytics:read", "analytics:write", "training:certify", "intervention:read", "referral:read", "institution:read", "adaptation:read", "training:read", "community:read", "reporting:read", "notification:read", "content:publish"],
   EMIR: ["case:read", "case:update", "protocol:run", "intervention:read", "referral:read", "institution:read", "notification:read"],
-  FEDERAL: ["analytics:read", "audit:read", "reporting:read", "institution:read", "adaptation:read", "training:read", "community:read", "content:publish"],
+  FEDERAL: ["analytics:read", "analytics:write", "training:certify", "audit:read", "reporting:read", "institution:read", "adaptation:read", "training:read", "community:read", "content:publish"],
   AUDITOR: ["case:read", "audit:read", "analytics:read", "reporting:read", "institution:read"],
   PRIVACY_OFFICER: ["audit:read", "case:read", "configuration:read", "privacy:read"],
   TECH_ADMIN: ["technical:operate", "configuration:read", "integration:read"]
@@ -144,6 +148,18 @@ export function canWriteModule(actor: Actor, moduleId: string) {
   // Generic module writes must be attached to a verified institution.
   if (!actor.scope.organizationId) return false;
   return (moduleWriters[moduleId] ?? []).some((role) => actor.roles.includes(role));
+}
+
+// Explicit mutation permissions; reading a dashboard or a course is not enough.
+export function canCaptureAnalytics(actor: Actor, kind: string, organizationPublicId?: string) {
+  if (!hasCapability(actor, "analytics:write")) return false;
+  if (isSuperAdmin(actor) || actor.roles.includes("FEDERAL")) return true;
+  if (kind === "impact" || kind === "budget") return false;
+  return Boolean(organizationPublicId && actor.scope.organizationId && organizationPublicId === actor.scope.organizationId);
+}
+
+export function canIssueCertification(actor: Actor) {
+  return hasCapability(actor, "training:certify");
 }
 
 export function canManageInstitutionalUsers(actor: Actor) {

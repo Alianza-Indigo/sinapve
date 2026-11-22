@@ -84,3 +84,21 @@ describe('privileged role provisioning', () => {
     expect(canProvisionRole({ ...actor, roles: ['SUPER_ADMIN'] }, 'INVALID_ROLE')).toBe(false);
   });
 });
+
+describe("separate reading from institutional mutations", () => {
+  it("allows scoped analytics only for authorized editors", async () => {
+    const { canCaptureAnalytics } = await import("./access");
+    expect(canCaptureAnalytics(actor, "risk_score", "org_secundaria_norte")).toBe(false);
+    const uepe: Actor = { ...actor, roles: ["UEPE"] };
+    expect(canCaptureAnalytics(uepe, "risk_score", "org_secundaria_norte")).toBe(true);
+    expect(canCaptureAnalytics(uepe, "risk_score", "otra_escuela")).toBe(false);
+    expect(canCaptureAnalytics(uepe, "budget")).toBe(false);
+    expect(canCaptureAnalytics({ ...actor, roles: ["FEDERAL"] }, "budget")).toBe(true);
+  });
+  it("does not allow read-only institutional users to issue certificates", async () => {
+    const { canIssueCertification } = await import("./access");
+    expect(canIssueCertification({ ...actor, roles: ["SCHOOL_DIRECTOR"] })).toBe(false);
+    expect(canIssueCertification({ ...actor, roles: ["UEPE"] })).toBe(true);
+    expect(canIssueCertification({ ...actor, roles: ["FEDERAL"] })).toBe(true);
+  });
+});

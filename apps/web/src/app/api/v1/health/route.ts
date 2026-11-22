@@ -49,7 +49,7 @@ export async function GET() {
   };
 
   // "ok" solo si la base conecta y el esquema esta aplicado; si no, "degraded".
-  const ok = checks.database.reachable && checks.database.migrationsApplied;
+  const ok = checks.database.reachable && checks.database.migrationsApplied && checks.database.migrationsUpToDate;
 
   return Response.json(
     { status: ok ? "ok" : "degraded", time: new Date().toISOString(), checks },

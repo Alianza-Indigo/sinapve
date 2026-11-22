@@ -90,7 +90,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ modu
       updatedAt: item.timeline[0]?.at ?? "", detail: item.title
     })) });
   }
-  const data = await listModuleRecords(moduleId as PlatformModuleId);
+  const data = await listModuleRecords(moduleId as PlatformModuleId, actor);
   return Response.json({ data });
 }
 

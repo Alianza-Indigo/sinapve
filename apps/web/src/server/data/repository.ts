@@ -1,6 +1,6 @@
 import { nanoid } from "nanoid";
 import { createHash, timingSafeEqual } from "crypto";
-import { canCreateCaseFromReport, canUpdateCase, canProvisionRole } from "../domain/access";
+import { canCreateCaseFromReport, canUpdateCase, canProvisionRole, canCaptureAnalytics, canIssueCertification } from "../domain/access";
 import { and, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { DatabaseNotConfiguredError, getDb, isDatabaseConfigured } from "../db";
 import { decryptSensitiveText, encryptSensitiveText, sha256Digest } from "../security/field-crypto";
@@ -159,6 +159,21 @@ async function findCaseRow(caseId: string, actor?: Actor) {
     id: caseRow.publicId, organizationId: caseRow.organizationPublicId ?? ""
   })) return null;
   return caseRow;
+}
+
+// Internal case IDs are always checked against institutional write permissions.
+async function assertCaseWriteAccess(actor: Actor, internalCaseId: string) {
+  const db = getDb();
+  const [row] = await db.select({ id: cases.publicId, organizationId: organizations.publicId })
+    .from(cases)
+    .innerJoin(organizations, eq(cases.organizationId, organizations.id))
+    .where(eq(cases.id, internalCaseId))
+    .limit(1);
+  if (!row) throw new Error("CASE_NOT_FOUND");
+  if (!canUpdateCase(actor, { id: row.id, organizationId: row.organizationId })) {
+    throw new Error("ACCESS_DENIED");
+  }
+  return row;
 }
 
 async function findOrganizationRow(organizationPublicId: string) {
@@ -642,12 +657,12 @@ function platformRecord(row: {
   };
 }
 
-export async function listPlatformModules(): Promise<PlatformModuleSummary[]> {
+export async function listPlatformModules(actor?: Actor): Promise<PlatformModuleSummary[]> {
   if (!isDatabaseConfigured()) {
     return moduleOrder.map((id) => ({ ...moduleCopy[id], count: 0, statusLabel: "Sin conexion de datos" }));
   }
 
-  const entries = await Promise.all(moduleOrder.map(async (id) => ({ id, rows: await listModuleRecords(id) })));
+  const entries = await Promise.all(moduleOrder.map(async (id) => ({ id, rows: await listModuleRecords(id, actor) })));
   const counts = new Map(entries.map((entry) => [entry.id, entry.rows.length]));
   return moduleOrder.map((id) => {
     const count = counts.get(id) ?? 0;
@@ -655,13 +670,27 @@ export async function listPlatformModules(): Promise<PlatformModuleSummary[]> {
   });
 }
 
-export async function listModuleRecords(moduleId: PlatformModuleId): Promise<PlatformRecord[]> {
+export async function listModuleRecords(moduleId: PlatformModuleId, actor?: Actor): Promise<PlatformRecord[]> {
   if (!isDatabaseConfigured()) return [];
 
   const db = getDb();
+  // Apply scope in SQL, before pagination or reading other schools' records.
+  const orgScope = !actor || isSuperAdmin(actor) || actor.roles.includes("FEDERAL")
+    ? undefined
+    : actor.scope.organizationId
+      ? eq(organizations.publicId, actor.scope.organizationId)
+      : sql`false`;
+  const caseScope = !actor || isSuperAdmin(actor) || actor.roles.includes("AUDITOR") || actor.roles.includes("PRIVACY_OFFICER")
+    ? undefined
+    : !hasCapability(actor, "case:read")
+      ? sql`false`
+      : or(
+          actor.scope.organizationId ? eq(organizations.publicId, actor.scope.organizationId) : sql`false`,
+          actor.scope.assignedCaseIds?.length ? inArray(cases.publicId, actor.scope.assignedCaseIds) : sql`false`
+        );
 
   if (moduleId === "reports") {
-    return (await listReports()).map((report) =>
+    return (await listReports({ actor })).map((report) =>
       platformRecord({
         id: report.id,
         title: report.folio,
@@ -674,7 +703,7 @@ export async function listModuleRecords(moduleId: PlatformModuleId): Promise<Pla
   }
 
   if (moduleId === "cases") {
-    return (await listCases()).map((caseFile) =>
+    return (await listCases({ actor })).map((caseFile) =>
       platformRecord({
         id: caseFile.id,
         title: caseFile.folio,
@@ -705,6 +734,9 @@ export async function listModuleRecords(moduleId: PlatformModuleId): Promise<Pla
         updatedAt: protocolRuns.startedAt
       })
       .from(protocolRuns)
+      .innerJoin(cases, eq(protocolRuns.caseId, cases.id))
+      .innerJoin(organizations, eq(cases.organizationId, organizations.id))
+      .where(caseScope)
       .orderBy(desc(protocolRuns.startedAt))
       .limit(100);
     const approvals = await db
@@ -725,6 +757,9 @@ export async function listModuleRecords(moduleId: PlatformModuleId): Promise<Pla
         updatedAt: protocolMigrations.createdAt
       })
       .from(protocolMigrations)
+      .innerJoin(cases, eq(protocolMigrations.caseId, cases.id))
+      .innerJoin(organizations, eq(cases.organizationId, organizations.id))
+      .where(caseScope)
       .orderBy(desc(protocolMigrations.createdAt))
       .limit(50);
     return [
@@ -799,6 +834,9 @@ export async function listModuleRecords(moduleId: PlatformModuleId): Promise<Pla
         nextReviewAt: interventionPlans.nextReviewAt
       })
       .from(interventionPlans)
+      .innerJoin(cases, eq(interventionPlans.caseId, cases.id))
+      .innerJoin(organizations, eq(cases.organizationId, organizations.id))
+      .where(caseScope)
       .orderBy(desc(interventionPlans.updatedAt))
       .limit(100);
     return rows.map((row) =>
@@ -817,6 +855,9 @@ export async function listModuleRecords(moduleId: PlatformModuleId): Promise<Pla
         requiredAckBy: referrals.requiredAckBy
       })
       .from(referrals)
+      .innerJoin(cases, eq(referrals.caseId, cases.id))
+      .innerJoin(organizations, eq(cases.organizationId, organizations.id))
+      .where(caseScope)
       .orderBy(desc(referrals.createdAt))
       .limit(100);
     return rows.map((row) =>
@@ -834,6 +875,8 @@ export async function listModuleRecords(moduleId: PlatformModuleId): Promise<Pla
         updatedAt: serviceDirectoryEntries.createdAt
       })
       .from(serviceDirectoryEntries)
+      .leftJoin(organizations, eq(serviceDirectoryEntries.organizationId, organizations.id))
+      .where(orgScope ? or(isNull(serviceDirectoryEntries.organizationId), orgScope) : undefined)
       .orderBy(desc(serviceDirectoryEntries.createdAt))
       .limit(100);
     return rows.map((row) => platformRecord({ ...row, detail: "Directorio territorial de servicios" }));
@@ -849,6 +892,8 @@ export async function listModuleRecords(moduleId: PlatformModuleId): Promise<Pla
         updatedAt: institutionalBodies.createdAt
       })
       .from(institutionalBodies)
+      .innerJoin(organizations, eq(institutionalBodies.organizationId, organizations.id))
+      .where(orgScope)
       .orderBy(desc(institutionalBodies.createdAt))
       .limit(50);
     const dispatches = await db
@@ -859,6 +904,8 @@ export async function listModuleRecords(moduleId: PlatformModuleId): Promise<Pla
         updatedAt: emirDispatches.createdAt
       })
       .from(emirDispatches)
+      .leftJoin(organizations, eq(emirDispatches.organizationId, organizations.id))
+      .where(orgScope)
       .orderBy(desc(emirDispatches.createdAt))
       .limit(50);
     const sessions = await db
@@ -869,6 +916,9 @@ export async function listModuleRecords(moduleId: PlatformModuleId): Promise<Pla
         updatedAt: institutionalSessions.createdAt
       })
       .from(institutionalSessions)
+      .innerJoin(institutionalBodies, eq(institutionalSessions.bodyId, institutionalBodies.id))
+      .innerJoin(organizations, eq(institutionalBodies.organizationId, organizations.id))
+      .where(orgScope)
       .orderBy(desc(institutionalSessions.createdAt))
       .limit(50);
     return [
@@ -915,6 +965,8 @@ export async function listModuleRecords(moduleId: PlatformModuleId): Promise<Pla
         updatedAt: communityInitiatives.createdAt
       })
       .from(communityInitiatives)
+      .leftJoin(organizations, eq(communityInitiatives.organizationId, organizations.id))
+      .where(orgScope)
       .orderBy(desc(communityInitiatives.createdAt))
       .limit(100);
     const proposals = await db
@@ -925,6 +977,8 @@ export async function listModuleRecords(moduleId: PlatformModuleId): Promise<Pla
         updatedAt: communityProposals.createdAt
       })
       .from(communityProposals)
+      .leftJoin(organizations, eq(communityProposals.organizationId, organizations.id))
+      .where(orgScope)
       .orderBy(desc(communityProposals.createdAt))
       .limit(50);
     return [
@@ -1051,6 +1105,8 @@ export async function listModuleRecords(moduleId: PlatformModuleId): Promise<Pla
         detail: contextualAdaptations.reviewStatus
       })
       .from(contextualAdaptations)
+      .leftJoin(organizations, eq(contextualAdaptations.requestingOrganizationId, organizations.id))
+      .where(orgScope)
       .orderBy(desc(contextualAdaptations.createdAt))
       .limit(100);
     return rows.map((row) => platformRecord({ ...row, detail: `Revision ${row.detail}` }));
@@ -1083,6 +1139,10 @@ export async function listModuleRecords(moduleId: PlatformModuleId): Promise<Pla
         detail: notifications.priority
       })
       .from(notifications)
+      .leftJoin(cases, eq(notifications.caseId, cases.id))
+      .leftJoin(organizations, eq(cases.organizationId, organizations.id))
+      .leftJoin(users, eq(notifications.userId, users.id))
+      .where(actor && !isSuperAdmin(actor) ? or(caseScope ?? sql`false`, eq(users.externalSubject, actor.id)) : undefined)
       .orderBy(desc(notifications.createdAt))
       .limit(100);
     const templates = await db
@@ -3742,12 +3802,26 @@ export async function enrollInTraining(input: { programPublicId: string; userExt
 export async function issueCertification(input: { enrollmentId: string; validityMonths?: number; actor: Actor }) {
   if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
   const db = getDb();
+  if (!canIssueCertification(input.actor)) throw new Error("ACCESS_DENIED");
   const [enrollment] = await db
-    .select({ id: trainingEnrollments.id, progressPercent: trainingEnrollments.progressPercent })
+    .select({ id: trainingEnrollments.id, progressPercent: trainingEnrollments.progressPercent, userId: trainingEnrollments.userId })
     .from(trainingEnrollments)
     .where(eq(trainingEnrollments.id, input.enrollmentId))
     .limit(1);
   if (!enrollment) throw new Error("TRAINING_ENROLLMENT_NOT_FOUND");
+  if (!isSuperAdmin(input.actor) && !input.actor.roles.includes("FEDERAL")) {
+    const [authorized] = await db.select({ id: userAssignments.id })
+      .from(userAssignments)
+      .innerJoin(organizations, eq(userAssignments.organizationId, organizations.id))
+      .where(and(
+        eq(userAssignments.userId, enrollment.userId),
+        isNull(userAssignments.endsAt),
+        input.actor.scope.organizationId
+          ? eq(organizations.publicId, input.actor.scope.organizationId)
+          : sql`false`
+      )).limit(1);
+    if (!authorized) throw new Error("ACCESS_DENIED");
+  }
   if (enrollment.progressPercent < 100) throw new Error("TRAINING_INCOMPLETE");
 
   const validityMonths = Math.min(Math.max(input.validityMonths ?? 24, 1), 60);
@@ -3794,6 +3868,7 @@ export async function reviewInterventionPlan(input: {
     .where(eq(interventionPlans.publicId, input.planId))
     .limit(1);
   if (!plan) throw new Error("INTERVENTION_PLAN_NOT_FOUND");
+  await assertCaseWriteAccess(input.actor, plan.caseId);
 
   const [updated] = await db
     .update(interventionPlans)
@@ -4053,6 +4128,7 @@ export async function migrateProtocolRun(input: { runId: string; toProtocolCode:
     .where(eq(protocolRuns.id, input.runId))
     .limit(1);
   if (!run) throw new Error("PROTOCOL_RUN_NOT_FOUND");
+  await assertCaseWriteAccess(input.actor, run.caseId);
   const toVersion = await findProtocolVersionRow(input.toProtocolCode);
   if (!toVersion) throw new Error("PROTOCOL_VERSION_NOT_FOUND");
 
@@ -4347,6 +4423,8 @@ export async function getDatabaseHealth() {
     }
   }
 
+  // A queryable core table does not imply that every migration has been applied.
+  migrationsApplied = migrationsApplied && appliedMigrations >= 11;
   return { configured: true, reachable, migrationsApplied, appliedMigrations, publicTables };
 }
 
@@ -4364,6 +4442,7 @@ export async function createAnalyticsInput(input:
   if (!isDatabaseConfigured()) throw new DatabaseNotConfiguredError();
   const db = getDb();
   const orgPublicId = "organizationPublicId" in input ? input.organizationPublicId : undefined;
+  if (!canCaptureAnalytics(input.actor, input.kind, orgPublicId)) throw new Error("ACCESS_DENIED");
   const organization = orgPublicId ? await findOrganizationRow(orgPublicId) : null;
   if (orgPublicId && !organization) throw new Error("ORGANIZATION_NOT_FOUND");
 

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { resolveActor } from "@/server/auth/session-actor";
 import { createAnalyticsInput } from "@/server/data/repository";
-import { hasCapability } from "@/server/domain/access";
+import { canCaptureAnalytics } from "@/server/domain/access";
 import { mapDomainError } from "@/server/http/errors";
 
 export const runtime = "nodejs";
@@ -35,13 +35,13 @@ const schema = z.discriminatedUnion("kind", [
 export async function POST(request: Request) {
   const actor = await resolveActor(request.headers);
   if (!actor) return Response.json({ error: "unauthorized" }, { status: 401 });
-  if (!hasCapability(actor, "analytics:read") && !hasCapability(actor, "reporting:read")) {
-    return Response.json({ error: "forbidden" }, { status: 403 });
-  }
-
   const body = await request.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) return Response.json({ error: "invalid_analytics_input", issues: parsed.error.flatten() }, { status: 400 });
+  const organizationId = "organizationPublicId" in parsed.data ? parsed.data.organizationPublicId : undefined;
+  if (!canCaptureAnalytics(actor, parsed.data.kind, organizationId)) {
+    return Response.json({ error: "forbidden" }, { status: 403 });
+  }
 
   try {
     const data = await createAnalyticsInput({ ...parsed.data, actor });
